@@ -162,7 +162,6 @@ describe('Paper Tool', () => {
       });
 
       const [url] = mockFetch.mock.calls[0];
-      // Should include fl parameter with default fields
       expect(url).toContain('fl=');
       expect(url).toContain('bibcode');
       expect(url).toContain('title');

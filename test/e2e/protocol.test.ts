@@ -9,18 +9,15 @@ import {
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { startMockAdsServer, type MockAdsServer } from '../helpers/mock-ads-server.js';
 
-// End-to-end smoke suite: connect a real MCP client to the *built* server over
-// stdio and assert its live surface (tools, prompts, resources) plus one canned
-// call per tool. This guards the drift bug class where the runtime tool list
-// diverges from source — invisible to the unit tests that call handlers
-// directly. See feature-request #1 / backlog issue 12 (Layer 1).
+// Connects a real MCP client to the *built* server over stdio: guards the
+// drift bug class where the runtime tool list diverges from source, invisible
+// to unit tests that call handlers directly. See backlog issue 12 (Layer 1).
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
 const serverEntry = path.join(repoRoot, 'build', 'index.js');
 
-// Complete, exact registered-tool list (22 incl. health_check). Kept as a
-// literal so any addition/removal in src/index.ts fails this assertion loudly.
+// Kept as a literal so any addition/removal in src/index.ts fails loudly.
 const EXPECTED_TOOLS = [
   'search',
   'get_paper',
@@ -56,9 +53,6 @@ const EXPECTED_PROMPTS = [
 
 const USAGE_GUIDE_URI = 'scix://usage-guide';
 
-// One canned call per tool with an expected output marker (substring, not a
-// full snapshot). Args are minimal valid inputs per the Zod schemas; the mock
-// server returns fixed JSON regardless of the exact query/id values.
 interface ToolCase {
   name: string;
   args: Record<string, unknown>;
@@ -86,7 +80,6 @@ const TOOL_CASES: ToolCase[] = [
   { name: 'get_annotation', args: { library_id: 'smokeLibId', bibcode: '2024SmokeT..42A' }, marker: 'Smoke annotation body' },
   { name: 'manage_annotation', args: { library_id: 'smokeLibId', bibcode: '2024SmokeT..42A', content: 'a note' }, marker: 'Annotation saved successfully' },
   { name: 'delete_annotation', args: { library_id: 'smokeLibId', bibcode: '2024SmokeT..42A' }, marker: 'Annotation deleted successfully' },
-  // search_docs is local (MiniSearch over the bundled index); no mock involved.
   { name: 'search_docs', args: { query: 'search syntax' }, marker: 'Documentation Search Results' },
   { name: 'health_check', args: {}, marker: 'Auth probe:** ok' }
 ];

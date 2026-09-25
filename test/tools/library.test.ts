@@ -446,8 +446,8 @@ describe('Library Tools', () => {
     });
 
     it('should not fall back when a non-404 error message merely contains "not found"', async () => {
-      // A 500 whose ADS body says "not found" must NOT trigger the search
-      // fallback — only a genuine 404 should. The fallback is status-driven.
+      // The fallback is status-driven: a 500 saying "not found" must not
+      // trigger it, only a genuine 404 should.
       const mockFetch = vi.fn().mockResolvedValueOnce({
         ok: false,
         status: 500,
@@ -468,7 +468,6 @@ describe('Library Tools', () => {
         })
       ).rejects.toThrow();
 
-      // Only the query endpoint was hit — no fallback search/add calls.
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(mockFetch.mock.calls[0][0]).toContain('biblib/documents/lib1/query');
     });
