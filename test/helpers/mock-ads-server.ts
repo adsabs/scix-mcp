@@ -1,23 +1,13 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-// A deliberately dumb mock of the ADS/SciX API for the e2e protocol suite.
-// Each route is a static (method, path-pattern) -> canned JSON mapping; there
-// is no server-side state. The goal is only to let the built MCP server make a
-// real HTTP round-trip so tool handlers and formatters run end to end.
-
 interface MockRoute {
   method: string;
   pattern: RegExp;
-  // status defaults to 200; body is JSON-serialised (undefined -> empty body).
   status?: number;
   body?: unknown;
 }
 
-// One canned Solr envelope serves every search/query consumer (search,
-// get_paper, get_citations, get_references, and the health_check probe). The
-// handlers differ in how they frame the same docs, so distinct output markers
-// fall out naturally per tool.
 const SOLR_RESPONSE = {
   response: {
     numFound: 1,
@@ -108,21 +98,54 @@ const ROUTES: MockRoute[] = [
   { method: 'POST', pattern: /^\/biblib\/transfer\/[^/]+$/, body: {} }
 ];
 
+export interface RecordedRequest {
+  method: string;
+  pathname: string;
+  query?: string;
+  headers: Record<string, string | undefined>;
+}
+
 export interface MockAdsServer {
   url: string;
+  requests: RecordedRequest[];
+  // Requests whose socket closed before the mock answered — i.e. the client
+  // cancelled in flight.
+  aborted: RecordedRequest[];
+  setDelay: (ms: number) => void;
+  reset: () => void;
   close: () => Promise<void>;
 }
 
-// Starts the mock on an ephemeral port (bind :0) and resolves once listening.
 export async function startMockAdsServer(): Promise<MockAdsServer> {
+  const requests: RecordedRequest[] = [];
+  const aborted: RecordedRequest[] = [];
+  let delayMs = 0;
+  const pending = new Set<ReturnType<typeof setTimeout>>();
+
   const server: Server = createServer((req, res) => {
-    // Drain the request body so keep-alive sockets close cleanly; contents are
-    // irrelevant to the static routing.
-    req.resume();
+    req.resume(); // drain the body so keep-alive sockets close cleanly
 
     const method = req.method ?? 'GET';
-    const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const pathname = url.pathname;
     const route = ROUTES.find((r) => r.method === method && r.pattern.test(pathname));
+
+    const recorded: RecordedRequest = {
+      method,
+      pathname,
+      query: url.search,
+      headers: {
+        authorization: req.headers.authorization,
+        'user-agent': req.headers['user-agent']
+      }
+    };
+    requests.push(recorded);
+
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        aborted.push(recorded);
+      }
+    });
 
     if (!route) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -130,13 +153,28 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
       return;
     }
 
-    res.writeHead(route.status ?? 200, { 'Content-Type': 'application/json' });
-    res.end(route.body === undefined ? '' : JSON.stringify(route.body));
+    const respond = () => {
+      if (res.writableEnded || res.destroyed) {
+        return;
+      }
+      res.writeHead(route.status ?? 200, { 'Content-Type': 'application/json' });
+      res.end(route.body === undefined ? '' : JSON.stringify(route.body));
+    };
+
+    if (delayMs > 0) {
+      const timer = setTimeout(() => {
+        pending.delete(timer);
+        respond();
+      }, delayMs);
+      pending.add(timer);
+      return;
+    }
+
+    respond();
   });
 
-  // Wire both outcomes so a bind failure (EADDRINUSE, EPERM in a locked-down
-  // sandbox) rejects fast with the real error instead of hanging until the
-  // beforeAll hook timeout on an unhandled 'error' event.
+  // A bind failure (EADDRINUSE, EPERM) must reject fast, not hang until the
+  // beforeAll timeout on an unhandled 'error' event.
   await new Promise<void>((resolve, reject) => {
     const onError = (err: Error) => {
       server.off('listening', onListening);
@@ -154,6 +192,18 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
 
   return {
     url: `http://127.0.0.1:${port}`,
+    requests,
+    aborted,
+    setDelay: (ms: number) => {
+      delayMs = ms;
+    },
+    reset: () => {
+      requests.length = 0;
+      aborted.length = 0;
+      delayMs = 0;
+      pending.forEach(clearTimeout);
+      pending.clear();
+    },
     close: () =>
       new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve()))

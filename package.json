@@ -4,7 +4,8 @@
   "description": "MCP server for NASA Astrophysics Data System API",
   "type": "module",
   "bin": {
-    "scix-mcp": "./build/index.js"
+    "scix-mcp": "./build/index.js",
+    "scix-mcp-http": "./build/http.js"
   },
   "files": [
     "build",

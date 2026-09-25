@@ -4,10 +4,15 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { readFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SciXAPIClient } from './client.js';
+import {
+  SERVER_NAME,
+  TransportKind,
+  isAPIKeyConfigured,
+  readServerVersion
+} from './config.js';
 import { isDirectRun } from './is-direct-run.js';
 import { search } from './tools/search.js';
 import { getPaper } from './tools/paper.js';
@@ -62,33 +67,8 @@ const __dirname = path.dirname(__filename);
 const usageGuidePath = path.join(__dirname, '..', 'USAGE_GUIDE.md');
 const promptsDir = path.join(__dirname, '..', 'prompts');
 
-const SERVER_NAME = 'scix-mcp';
-
 function promptPath(id: string): string {
   return path.join(promptsDir, `${id}.md`);
-}
-
-// Read the version from package.json at runtime so it lives in one place.
-// build/index.js sits alongside build/, so ../package.json resolves to the
-// package root both in the built tree and after npm install.
-function readServerVersion(): string {
-  const pkgPath = path.join(__dirname, '..', 'package.json');
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Could not read version from ${pkgPath}: ${message}`);
-  }
-  if (
-    typeof parsed === 'object' &&
-    parsed !== null &&
-    'version' in parsed &&
-    typeof parsed.version === 'string'
-  ) {
-    return parsed.version;
-  }
-  throw new Error(`Could not read version from ${pkgPath}`);
 }
 
 function textResult(text: string): CallToolResult {
@@ -100,30 +80,42 @@ function errorResult(error: unknown): CallToolResult {
   return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
 }
 
-export function createServer(): McpServer {
+export interface CreateServerOptions {
+  // Falls back to SCIX_API_TOKEN when absent.
+  apiToken?: string;
+  transport?: TransportKind;
+  signal?: AbortSignal;
+}
+
+export function createServer(options: CreateServerOptions = {}): McpServer {
   const serverVersion = readServerVersion();
   const server = new McpServer({
     name: SERVER_NAME,
     version: serverVersion,
   });
 
-  // Record each tool name as it is registered so health_check can report the
-  // live list without a second source of truth that could drift. The SDK
-  // (1.x) exposes no public accessor for registered tools; wrapping the name
-  // argument in track() means every registration is captured by construction.
+  // The SDK exposes no public accessor for registered tools, so track() wraps
+  // each registerTool name to keep health_check's list from a second source
+  // of truth that could drift.
   const toolNames: string[] = [];
   function track(name: string): string {
     toolNames.push(name);
     return name;
   }
 
-  // Construct the API client lazily so a missing/invalid SCIX_API_TOKEN
-  // surfaces as a graceful tool error rather than an import-time crash.
+  const tokenConfigured = options.apiToken?.trim() ? true : isAPIKeyConfigured();
+
+  // Lazy so a missing/invalid SCIX_API_TOKEN surfaces as a tool error, not an
+  // import-time crash.
   let cachedClient: SciXAPIClient | undefined;
 
   function getClient(): SciXAPIClient {
     if (!cachedClient) {
-      cachedClient = new SciXAPIClient();
+      cachedClient = new SciXAPIClient({
+        token: options.apiToken,
+        transport: options.transport,
+        signal: options.signal
+      });
     }
     return cachedClient;
   }
@@ -629,6 +621,7 @@ export function createServer(): McpServer {
             serverName: SERVER_NAME,
             serverVersion,
             toolNames,
+            tokenConfigured,
             createClient: getClient,
           },
           input
@@ -752,7 +745,7 @@ export function createServer(): McpServer {
 }
 
 async function main() {
-  const server = createServer();
+  const server = createServer({ transport: 'stdio' });
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('SciX MCP Server running on stdio');

@@ -1,4 +1,11 @@
-import { getAPIKey, SCIX_API_BASE, REQUEST_TIMEOUT, RATE_LIMIT } from './config.js';
+import {
+  getAPIKey,
+  SCIX_API_BASE,
+  REQUEST_TIMEOUT,
+  RATE_LIMIT,
+  buildUserAgent,
+  TransportKind
+} from './config.js';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -20,6 +27,42 @@ function formatRateLimitReset(resetHeader: string | null): string | undefined {
     return undefined;
   }
   return date.toISOString();
+}
+
+interface AbortState {
+  signal: AbortSignal;
+  // Any AbortError not caused by the caller is attributed to the timeout.
+  cancelledByCaller: () => boolean;
+  dispose: () => void;
+}
+
+// Hand-wired instead of AbortSignal.any(), which needs Node 20; package.json
+// allows Node 18.
+function linkAbort(callerSignal: AbortSignal | undefined, timeoutMs: number): AbortState {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  const onCallerAbort = () => controller.abort();
+  if (callerSignal?.aborted) {
+    controller.abort();
+  } else {
+    callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    cancelledByCaller: () => callerSignal?.aborted === true,
+    dispose: () => {
+      clearTimeout(timer);
+      callerSignal?.removeEventListener('abort', onCallerAbort);
+    }
+  };
+}
+
+function abortMessage(cancelledByCaller: boolean): string {
+  return cancelledByCaller
+    ? 'Request cancelled before the SciX API responded'
+    : `Request timeout after ${REQUEST_TIMEOUT / 1000} seconds`;
 }
 
 function extractAdsErrorMessage(body: unknown): string | undefined {
@@ -48,13 +91,27 @@ export class SciXAPIError extends Error {
   }
 }
 
+export interface SciXAPIClientOptions {
+  // Falls back to SCIX_API_TOKEN when absent.
+  token?: string;
+  transport?: TransportKind;
+  // Aborted by the HTTP transport on caller disconnect, so an abandoned
+  // request doesn't keep running against the caller's rate limit.
+  signal?: AbortSignal;
+}
+
 export class SciXAPIClient {
   private apiKey: string;
   private baseURL: string;
+  private userAgent: string;
+  private signal?: AbortSignal;
 
-  constructor() {
-    this.apiKey = getAPIKey();
+  constructor(options: SciXAPIClientOptions = {}) {
+    const provided = options.token?.trim();
+    this.apiKey = provided ? provided : getAPIKey();
     this.baseURL = SCIX_API_BASE;
+    this.userAgent = buildUserAgent(options.transport ?? 'stdio');
+    this.signal = options.signal;
   }
 
   async get<T = unknown>(endpoint: string, params?: Record<string, unknown>): Promise<T> {
@@ -97,11 +154,11 @@ export class SciXAPIClient {
     { params, body }: RequestOptions
   ): Promise<T> {
     const url = this.buildUrl(endpoint, params);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+    const abort = linkAbort(this.signal, REQUEST_TIMEOUT);
 
     const headers: Record<string, string> = {
-      'Authorization': `Bearer ${this.apiKey}`
+      'Authorization': `Bearer ${this.apiKey}`,
+      'User-Agent': this.userAgent
     };
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -112,10 +169,8 @@ export class SciXAPIClient {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: controller.signal
+        signal: abort.signal
       });
-
-      clearTimeout(timeout);
 
       const text = await response.text();
 
@@ -133,18 +188,18 @@ export class SciXAPIClient {
       }
 
       const trimmed = text.trim();
-      // Single deserialization boundary: ADS responses are not runtime-
-      // validated, so the caller's generic T is trusted here (see types.ts
-      // response shapes). Keep the parse result `unknown` and assert at the
-      // return so `any` never leaks into local inference.
+      // ADS responses are not runtime-validated; T is trusted at this boundary.
       const parsed: unknown = trimmed ? JSON.parse(trimmed) : {};
       return parsed as T;
     } catch (error: unknown) {
-      clearTimeout(timeout);
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`Request timeout after ${REQUEST_TIMEOUT / 1000} seconds`);
+        throw new Error(abortMessage(abort.cancelledByCaller()));
       }
       throw error;
+    } finally {
+      // Not disposed right after fetch(): the signal has to stay armed through
+      // the body read, which is where a large export actually spends its time.
+      abort.dispose();
     }
   }
 
@@ -172,7 +227,7 @@ export class SciXAPIClient {
 
     let message: string;
     if (status === 401) {
-      message = `Authentication failed ${context}. Check SCIX_API_TOKEN environment variable. ` +
+      message = `Authentication failed ${context}. The SciX API token was missing or rejected. ` +
         `Get your key from https://scixplorer.org/user/settings/token`;
     } else if (status === 404) {
       message = `Resource not found ${context}.`;

@@ -80,7 +80,7 @@ describe('SciXAPIClient', () => {
       setupMockFetch({ status: 401, statusText: 'Unauthorized' });
 
       await expect(client.get('test')).rejects.toThrow('Authentication failed');
-      await expect(client.get('test')).rejects.toThrow('SCIX_API_TOKEN');
+      await expect(client.get('test')).rejects.toThrow('token was missing or rejected');
     });
 
     it('should throw on 404 Not Found', async () => {
@@ -277,6 +277,36 @@ describe('SciXAPIClient', () => {
     });
   });
 
+  describe('caller cancellation', () => {
+    it('aborts the upstream request when the caller signal fires', async () => {
+      const controller = new AbortController();
+      const cancellable = new SciXAPIClient({ signal: controller.signal });
+      const mockFetch = setupMockFetch({ body: {}, delay: 5000 });
+
+      const pending = cancellable.get('test');
+      controller.abort();
+
+      await expect(pending).rejects.toThrow('Request cancelled');
+      const [, init] = mockFetch.mock.calls[0];
+      expect(init.signal.aborted).toBe(true);
+    });
+
+    it('rejects immediately when the signal is already aborted', async () => {
+      const mockFetch = setupMockFetch({ body: {} });
+      const cancellable = new SciXAPIClient({ signal: AbortSignal.abort() });
+
+      await expect(cancellable.get('test')).rejects.toThrow('Request cancelled');
+      const [, init] = mockFetch.mock.calls[0];
+      expect(init.signal.aborted).toBe(true);
+    });
+
+    it('still reports a timeout when no caller signal is involved', async () => {
+      global.fetch = createTimeoutFetch(50) as any;
+
+      await expect(client.get('test')).rejects.toThrow('Request timeout after 30 seconds');
+    });
+  });
+
   describe('Content-Type headers', () => {
     it('should set application/json only for requests with a body', async () => {
       const mockFetch = setupMockFetch({ body: {} });
@@ -384,7 +414,7 @@ describe('SciXAPIClient', () => {
       const error = await client.post('biblib/libraries', {}).catch((e) => e);
 
       expect(error.message).toContain('Authentication failed');
-      expect(error.message).toContain('SCIX_API_TOKEN');
+      expect(error.message).toContain('token was missing or rejected');
       expect(error.message).toContain('scixplorer.org/user/settings/token');
     });
   });
@@ -426,7 +456,6 @@ describe('SciXAPIClient', () => {
 
     it('should still throw a typed error when the error body is not JSON', async () => {
       const mockFetch = setupMockFetch({ status: 502, statusText: 'Bad Gateway' });
-      // Simulate an upstream HTML/plain-text error page (not valid JSON)
       mockFetch.mockImplementation(async () => ({
         ok: false,
         status: 502,

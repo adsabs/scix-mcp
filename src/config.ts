@@ -1,20 +1,56 @@
-/**
- * Configuration and constants for NASA SciX MCP Server
- */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// Default to the production ADS API. SCIX_API_BASE can override the base URL
-// (e.g. to point the server at a local mock during e2e tests). Trim and treat
-// blank as unset — mirrors getAPIKey — so a stray/empty value can't yield an
-// invalid base that throws in `new URL(...)`.
+export const SERVER_NAME = 'scix-mcp';
+
+// Carried into the outbound User-Agent so ADS access logs can separate the
+// hosted deployment from individual stdio users.
+export type TransportKind = 'stdio' | 'http';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// build/config.js sits inside build/, so ../package.json resolves to the
+// package root both in the built tree and after npm install.
+export function readServerVersion(): string {
+  const pkgPath = path.join(__dirname, '..', 'package.json');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not read version from ${pkgPath}: ${message}`);
+  }
+  if (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    'version' in parsed &&
+    typeof parsed.version === 'string'
+  ) {
+    return parsed.version;
+  }
+  throw new Error(`Could not read version from ${pkgPath}`);
+}
+
+export function buildUserAgent(transport: TransportKind): string {
+  if (!cachedVersion) {
+    cachedVersion = readServerVersion();
+  }
+  return `${SERVER_NAME}/${cachedVersion} (transport=${transport})`;
+}
+
+// Memoized so the HTTP transport, which builds a client per request, does not
+// re-read package.json on every call.
+let cachedVersion: string | undefined;
+
+// Blank/unset SCIX_API_BASE falls back to the production API rather than
+// throwing from `new URL(...)` on an empty string.
 const configuredBase = process.env.SCIX_API_BASE?.trim();
 export const SCIX_API_BASE =
   configuredBase && configuredBase.length > 0
     ? configuredBase
     : 'https://api.adsabs.harvard.edu/v1';
 
-/**
- * Default fields to retrieve in search queries
- */
 export const DEFAULT_FIELDS = [
   'bibcode',
   'title',
@@ -33,9 +69,6 @@ export const DEFAULT_FIELDS = [
   'identifier'
 ];
 
-/**
- * Rate limit information
- */
 export const RATE_LIMIT = {
   REQUESTS_PER_DAY: 5000,
   HEADERS: {
@@ -45,25 +78,15 @@ export const RATE_LIMIT = {
   }
 };
 
-/**
- * API request timeout in milliseconds
- */
 export const REQUEST_TIMEOUT = 30000;
 
-/**
- * Report whether a usable SCIX_API_TOKEN is present, without throwing.
- * Mirrors getAPIKey's non-empty/trim check so callers can gate on token
- * presence (e.g. the health_check probe) instead of catching a throw.
- */
+// Mirrors getAPIKey's non-empty/trim check without throwing, so callers (e.g.
+// health_check) can gate on presence instead of catching.
 export function isAPIKeyConfigured(): boolean {
   const key = process.env.SCIX_API_TOKEN;
   return typeof key === 'string' && key.trim() !== '';
 }
 
-/**
- * Validate and retrieve the SciX API key from environment
- * @throws Error if SCIX_API_TOKEN is not set
- */
 export function getAPIKey(): string {
   const key = process.env.SCIX_API_TOKEN;
 
@@ -77,12 +100,6 @@ export function getAPIKey(): string {
   return key.trim();
 }
 
-/**
- * Maximum bibcodes for metrics and export operations
- */
 export const MAX_BIBCODES = 2000;
 
-/**
- * Maximum rows per search request
- */
 export const MAX_ROWS = 100;

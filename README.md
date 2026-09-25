@@ -45,10 +45,29 @@ Local MCP clients that read `.mcp/server.json` can also pick up the packaged con
 
 ### Environment variables
 
-- `SCIX_API_TOKEN` (required): your SciX/ADS API key.
+- `SCIX_API_TOKEN` (required for stdio): your SciX/ADS API key. Not used by the
+  HTTP transport, which takes the token from each request.
 - `SCIX_API_BASE` (optional): override the API base URL. Defaults to
   `https://api.adsabs.harvard.edu/v1` when unset. Primarily used to point the
   server at a local mock during the e2e test suite.
+- `PORT` / `HOST` (HTTP only): where the HTTP transport listens. Default
+  `8000` on `0.0.0.0`.
+
+## HTTP transport
+
+`scix-mcp-http` serves the same tools over Streamable HTTP instead of stdio:
+`POST /mcp` for JSON-RPC, `GET /healthz` as an unauthenticated probe.
+
+Unlike stdio, the server holds no token of its own — each request must carry
+the caller's, and requests without one get a 401:
+
+```
+Authorization: Bearer <your SciX API token>
+```
+
+Tool calls act as the calling user and spend that user's rate limit. Clients
+that cannot set the header (ChatGPT connectors, which need OAuth or no auth)
+cannot use this endpoint.
 
 ## Example Prompts
 
@@ -274,7 +293,8 @@ Use export with bibcodes ["2023ApJ...950..123S"] and format "bibtex"
 
 The server provides clear error messages:
 
-- **401**: Invalid API key - check `SCIX_API_TOKEN`
+- **401**: Token missing or rejected - check `SCIX_API_TOKEN` (stdio) or the
+  `Authorization: Bearer` header (HTTP)
 - **404**: Resource not found - check bibcode format
 - **429**: Rate limit exceeded - wait until reset
 - **Timeout**: Request took > 30 seconds
