@@ -353,11 +353,11 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   server.registerTool(
     track('edit_library'),
     {
-      description: 'Edit library metadata (name, description, public status).',
+      description: 'Edit library metadata (name, description, public status). Overwrites the current values, and changing public status can expose a private library.',
       inputSchema: EditLibraryInputSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true,
       },
@@ -376,11 +376,11 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   server.registerTool(
     track('manage_documents'),
     {
-      description: 'Add or remove documents from a library.',
+      description: 'Add or remove documents from a library. Removal discards the record of those documents in that library.',
       inputSchema: ManageDocumentsInputSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true,
       },
@@ -422,11 +422,11 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   server.registerTool(
     track('library_operation'),
     {
-      description: 'Perform set operations on libraries (union, intersection, difference, copy, empty).',
+      description: 'Perform set operations on libraries (union, intersection, difference, copy, empty). The empty, difference and intersection actions replace or discard the contents of the target library.',
       inputSchema: LibraryOperationInputSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: false,
         openWorldHint: true,
       },
@@ -468,11 +468,11 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   server.registerTool(
     track('update_permissions'),
     {
-      description: 'Grant or modify permissions for a user on a library.',
+      description: 'Grant or modify permissions for a user on a library. Can revoke access that an existing collaborator currently has.',
       inputSchema: UpdatePermissionsInputSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true,
       },
@@ -491,11 +491,11 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   server.registerTool(
     track('transfer_library'),
     {
-      description: 'Transfer ownership of a library to another user.',
+      description: 'Transfer ownership of a library to another user. The current owner loses ownership and this server cannot undo it.',
       inputSchema: TransferLibraryInputSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: false,
         openWorldHint: true,
       },
@@ -537,11 +537,11 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   server.registerTool(
     track('manage_annotation'),
     {
-      description: 'Add or update an annotation/note for a document in a library.',
+      description: 'Add or update an annotation/note for a document in a library. Updating replaces the existing note content.',
       inputSchema: ManageAnnotationInputSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true,
       },

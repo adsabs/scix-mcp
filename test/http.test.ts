@@ -188,6 +188,41 @@ describe('HTTP transport', () => {
     expect(names).toContain('health_check');
   });
 
+  // destructiveHint defaults to true in the MCP spec, so a `false` on a writing
+  // tool is an affirmative safety claim that suppresses host approval prompts.
+  // Only genuinely additive writes may make it.
+  it('advertises every state-removing tool as destructive', async () => {
+    const ADDITIVE_ONLY = ['create_library', 'add_documents_by_query'];
+
+    const response = await post(
+      { jsonrpc: '2.0', id: 8, method: 'tools/list', params: {} },
+      authed()
+    );
+    const body = await response.json();
+
+    type ToolEntry = {
+      name: string;
+      annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
+    };
+    const tools: ToolEntry[] = body.result.tools;
+    expect(tools.length).toBeGreaterThan(0);
+
+    const writers = tools.filter((tool) => tool.annotations?.readOnlyHint === false);
+    const claimingSafe = writers
+      .filter((tool) => tool.annotations?.destructiveHint === false)
+      .map((tool) => tool.name)
+      .sort();
+
+    expect(claimingSafe).toEqual(ADDITIVE_ONLY.slice().sort());
+
+    // Read-only tools must not also claim to write.
+    for (const tool of tools) {
+      if (tool.annotations?.readOnlyHint === true) {
+        expect(tool.annotations.destructiveHint).toBe(false);
+      }
+    }
+  });
+
   it('forwards the caller token to the SciX API and identifies itself', async () => {
     const response = await post(
       {
