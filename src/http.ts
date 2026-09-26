@@ -62,6 +62,17 @@ function extractBearerToken(req: IncomingMessage): string | undefined {
   return token ? token : undefined;
 }
 
+// Node accepts request targets the WHATWG parser rejects ("GET //[/"), and this
+// runs before any auth or routing, so an unguarded parse is an unauthenticated
+// kill switch for the process.
+function parsePath(rawUrl: string | undefined): string | undefined {
+  try {
+    return new URL(rawUrl ?? '/', 'http://localhost').pathname;
+  } catch {
+    return undefined;
+  }
+}
+
 function rpcMethodOf(body: unknown): string | undefined {
   if (body && typeof body === 'object' && 'method' in body) {
     const method = (body as { method: unknown }).method;
@@ -180,11 +191,23 @@ async function handleMcpPost(
 export function createRequestListener() {
   const version = readServerVersion();
 
-  return async function requestListener(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const startedAt = Date.now();
     const requestId = req.headers['x-request-id'];
-    const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+    const path = parsePath(req.url);
     let rpcMethod: string | undefined;
+
+    if (path === undefined) {
+      sendJson(res, 400, { error: 'Malformed request target' });
+      logRequest({
+        method: req.method ?? 'UNKNOWN',
+        path: 'malformed',
+        status: res.statusCode,
+        duration_ms: Date.now() - startedAt,
+        request_id: typeof requestId === 'string' ? requestId : undefined
+      });
+      return;
+    }
 
     try {
       if (req.method === 'OPTIONS' && path === MCP_PATH) {
@@ -219,6 +242,20 @@ export function createRequestListener() {
       duration_ms: Date.now() - startedAt,
       rpc_method: rpcMethod,
       request_id: typeof requestId === 'string' ? requestId : undefined
+    });
+  }
+
+  // node:http ignores the promise a listener returns, so any rejection escaping
+  // handle() would reach the unhandledRejection default and exit the process.
+  return function requestListener(req: IncomingMessage, res: ServerResponse): void {
+    void handle(req, res).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`${JSON.stringify({ level: 'error', path: 'unhandled', message })}\n`);
+      if (!res.headersSent) {
+        sendRpcError(res, 500, -32603, 'Internal server error');
+      } else if (!res.writableEnded) {
+        res.end();
+      }
     });
   };
 }

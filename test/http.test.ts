@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import {
@@ -131,6 +132,32 @@ describe('HTTP transport', () => {
     expect(response.status).toBe(204);
     expect(response.headers.get('access-control-allow-origin')).toBe('*');
     expect(response.headers.get('access-control-allow-headers')).toContain('authorization');
+  });
+
+  // Regression: this target is accepted by Node but rejected by the WHATWG URL
+  // parser. The parse ran before the try/catch, so one unauthenticated request
+  // rejected the listener's promise and exited the whole process.
+  it('survives a request target the URL parser rejects', async () => {
+    const raw = await new Promise<string>((resolve, reject) => {
+      let data = '';
+      const socket = net.connect(
+        Number((server.address() as AddressInfo).port),
+        '127.0.0.1',
+        () => socket.write('GET //[/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n')
+      );
+      socket.setTimeout(5000, () => reject(new Error('timed out')));
+      socket.on('data', (chunk) => {
+        data += chunk.toString();
+      });
+      socket.on('close', () => resolve(data));
+      socket.on('error', reject);
+    });
+
+    expect(raw).toContain('400');
+
+    // The point of the test: the process is still serving afterwards.
+    const after = await fetch(`${baseUrl}/healthz`);
+    expect(after.status).toBe(200);
   });
 
   it('404s an unknown path', async () => {
