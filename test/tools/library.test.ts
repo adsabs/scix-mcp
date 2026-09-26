@@ -708,5 +708,36 @@ describe('Library Tools', () => {
 
       expect(result).toContain('Annotation deleted successfully');
     });
+
+    // Regression: the schema accepts any nonempty string and new URL() resolves
+    // dot segments, so this bibcode turned an annotation delete into
+    // DELETE biblib/documents/lib1 — the delete-library endpoint.
+    it('refuses a bibcode that would retarget the request at another endpoint', async () => {
+      const mockFetch = setupMockFetch({ body: {} });
+
+      await expect(
+        deleteAnnotation(client, {
+          library_id: 'lib1',
+          bibcode: '../../../documents/lib1',
+          response_format: ResponseFormat.MARKDOWN
+        })
+      ).rejects.toThrow(/Invalid bibcode/);
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('refuses a library_id containing path delimiters', async () => {
+      const mockFetch = setupMockFetch({ body: {} });
+
+      await expect(
+        deleteAnnotation(client, {
+          library_id: '../../documents/other',
+          bibcode: '2024ApJ...123..456A',
+          response_format: ResponseFormat.MARKDOWN
+        })
+      ).rejects.toThrow(/Invalid library_id/);
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
   });
 });

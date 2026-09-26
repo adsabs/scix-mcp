@@ -27,6 +27,7 @@ import {
   Annotation,
   SolrResponse
 } from '../types.js';
+import { libraryIdSegment, bibcodeSegment } from '../api-path.js';
 
 export async function getLibraries(
   client: SciXAPIClient,
@@ -71,7 +72,7 @@ export async function getLibrary(
   client: SciXAPIClient,
   input: GetLibraryInput
 ): Promise<string> {
-  const data = await client.get<GetLibraryResponse>(`biblib/libraries/${input.library_id}`);
+  const data = await client.get<GetLibraryResponse>(`biblib/libraries/${libraryIdSegment(input.library_id)}`);
   const library = data.metadata ?? data;
   const documents: string[] = data.documents || [];
 
@@ -143,7 +144,7 @@ export async function deleteLibrary(
   input: DeleteLibraryInput
 ): Promise<string> {
   // SciX uses the documents endpoint for destructive library operations
-  await client.delete(`biblib/documents/${input.library_id}`);
+  await client.delete(`biblib/documents/${libraryIdSegment(input.library_id)}`);
 
   if (input.response_format === ResponseFormat.JSON) {
     return JSON.stringify({ success: true, library_id: input.library_id }, null, 2);
@@ -173,7 +174,7 @@ export async function editLibrary(
   }
 
   // ADS/SciX expects metadata updates on the documents endpoint, not libraries
-  const data = await client.put<LibraryMetadataResponse>(`biblib/documents/${input.library_id}`, payload);
+  const data = await client.put<LibraryMetadataResponse>(`biblib/documents/${libraryIdSegment(input.library_id)}`, payload);
   const library = data.metadata ?? data;
 
   if (!library || !library.name) {
@@ -202,7 +203,7 @@ export async function manageDocuments(
   };
 
   const data = await client.post<DocumentUpdateResponse>(
-    `biblib/documents/${input.library_id}`,
+    `biblib/documents/${libraryIdSegment(input.library_id)}`,
     payload
   );
 
@@ -223,7 +224,7 @@ export async function addDocumentsByQuery(
 
   try {
     const data = await client.post<DocumentUpdateResponse>(
-      `biblib/documents/${input.library_id}/query`,
+      `biblib/documents/${libraryIdSegment(input.library_id)}/query`,
       payload
     );
 
@@ -262,7 +263,7 @@ export async function addDocumentsByQuery(
   }
 
   const data = await client.post<DocumentUpdateResponse>(
-    `biblib/documents/${input.library_id}`,
+    `biblib/documents/${libraryIdSegment(input.library_id)}`,
     {
       bibcode: bibcodes,
       action: DocumentAction.ADD
@@ -305,7 +306,7 @@ export async function libraryOperation(
   }
 
   const data = await client.post<LibraryOperationResponse>(
-    `biblib/libraries/operations/${input.library_id}`,
+    `biblib/libraries/operations/${libraryIdSegment(input.library_id)}`,
     payload
   );
 
@@ -329,7 +330,7 @@ export async function getPermissions(
   client: SciXAPIClient,
   input: GetPermissionsInput
 ): Promise<string> {
-  const data = await client.get<PermissionsResponse>(`biblib/permissions/${input.library_id}`);
+  const data = await client.get<PermissionsResponse>(`biblib/permissions/${libraryIdSegment(input.library_id)}`);
 
   if (input.response_format === ResponseFormat.JSON) {
     return JSON.stringify(data, null, 2);
@@ -362,7 +363,7 @@ export async function updatePermissions(
     permission: input.permission
   };
 
-  const data = await client.post(`biblib/permissions/${input.library_id}`, payload);
+  const data = await client.post(`biblib/permissions/${libraryIdSegment(input.library_id)}`, payload);
 
   if (input.response_format === ResponseFormat.JSON) {
     return JSON.stringify(data, null, 2);
@@ -381,7 +382,7 @@ export async function transferLibrary(
     email: input.email
   };
 
-  const data = await client.post(`biblib/transfer/${input.library_id}`, payload);
+  const data = await client.post(`biblib/transfer/${libraryIdSegment(input.library_id)}`, payload);
 
   if (input.response_format === ResponseFormat.JSON) {
     return JSON.stringify(data, null, 2);
@@ -395,7 +396,7 @@ export async function getAnnotation(
   input: GetAnnotationInput
 ): Promise<string> {
   const annotation = await client.get<Annotation>(
-    `biblib/libraries/${input.library_id}/notes/${input.bibcode}`
+    `biblib/libraries/${libraryIdSegment(input.library_id)}/notes/${bibcodeSegment(input.bibcode)}`
   );
 
   if (input.response_format === ResponseFormat.JSON) {
@@ -421,7 +422,7 @@ export async function manageAnnotation(
     content: input.content
   };
 
-  const data = await client.post(`biblib/libraries/${input.library_id}/notes/${input.bibcode}`, payload);
+  const data = await client.post(`biblib/libraries/${libraryIdSegment(input.library_id)}/notes/${bibcodeSegment(input.bibcode)}`, payload);
 
   if (input.response_format === ResponseFormat.JSON) {
     return JSON.stringify(data, null, 2);
@@ -434,7 +435,7 @@ export async function deleteAnnotation(
   client: SciXAPIClient,
   input: DeleteAnnotationInput
 ): Promise<string> {
-  await client.delete(`biblib/libraries/${input.library_id}/notes/${input.bibcode}`);
+  await client.delete(`biblib/libraries/${libraryIdSegment(input.library_id)}/notes/${bibcodeSegment(input.bibcode)}`);
 
   if (input.response_format === ResponseFormat.JSON) {
     return JSON.stringify({ success: true, bibcode: input.bibcode }, null, 2);
