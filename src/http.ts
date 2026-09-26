@@ -105,6 +105,18 @@ function sendRpcError(res: ServerResponse, status: number, code: number, message
   sendJson(res, status, { jsonrpc: '2.0', error: { code, message }, id: null });
 }
 
+// Rejecting a request without reading its body leaves Node draining whatever the
+// client keeps sending, which bypasses MAX_BODY_BYTES entirely — an unauthorized
+// caller can make us ingest and discard gigabytes. Answer, then hang up.
+function rejectAndClose(res: ServerResponse, status: number, code: number, message: string): void {
+  res.setHeader('Connection', 'close');
+  res.writeHead(status, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+  // Destroyed only once the response has flushed, or the client loses it.
+  res.end(JSON.stringify({ jsonrpc: '2.0', error: { code, message }, id: null }), () => {
+    res.socket?.destroy();
+  });
+}
+
 // Stateless: a fresh server and transport per POST, so any replica can answer
 // any request without shared or ingress-pinned session state.
 async function dispatchRpc(
@@ -160,7 +172,7 @@ async function handleMcpPost(
 ): Promise<string | undefined> {
   const token = extractBearerToken(req);
   if (!token) {
-    sendRpcError(
+    rejectAndClose(
       res,
       401,
       -32001,
@@ -175,7 +187,7 @@ async function handleMcpPost(
     body = await readJsonBody(req);
   } catch (error) {
     const tooLarge = error instanceof BodyTooLargeError;
-    sendRpcError(
+    rejectAndClose(
       res,
       tooLarge ? 413 : 400,
       tooLarge ? -32600 : -32700,
@@ -220,7 +232,7 @@ export function createRequestListener() {
       } else if (path === MCP_PATH) {
         // Stateless: no SSE stream to open, no session to delete.
         res.setHeader('Allow', 'POST, OPTIONS');
-        sendRpcError(res, 405, -32000, `${req.method} is not supported on ${MCP_PATH}`);
+        rejectAndClose(res, 405, -32000, `${req.method} is not supported on ${MCP_PATH}`);
       } else {
         sendJson(res, 404, { error: 'Not found' });
       }

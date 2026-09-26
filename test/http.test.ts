@@ -103,6 +103,35 @@ describe('HTTP transport', () => {
     expect(response.status).toBe(401);
   });
 
+  // Rejecting without reading the body leaves Node draining whatever the client
+  // keeps sending, which bypasses MAX_BODY_BYTES: an unauthorized caller could
+  // make the server ingest and discard gigabytes.
+  it('hangs up on an unauthorized request rather than draining its body', async () => {
+    const raw = await new Promise<string>((resolve, reject) => {
+      let data = '';
+      const socket = net.connect(
+        Number((server.address() as AddressInfo).port),
+        '127.0.0.1',
+        () => {
+          // Declares a body far past the cap and never sends it.
+          socket.write(
+            'POST /mcp HTTP/1.1\r\nHost: x\r\nContent-Length: 1000000000\r\n\r\n'
+          );
+        }
+      );
+      socket.setTimeout(5000, () => reject(new Error('timed out')));
+      socket.on('data', (chunk) => {
+        data += chunk.toString();
+      });
+      // Resolving on close is the assertion: the server must hang up on its own.
+      socket.on('close', () => resolve(data));
+      socket.on('error', () => resolve(data));
+    });
+
+    expect(raw).toContain('401');
+    expect(raw.toLowerCase()).toContain('connection: close');
+  });
+
   it('returns 400 on a malformed JSON body', async () => {
     const response = await fetch(`${baseUrl}/mcp`, {
       method: 'POST',

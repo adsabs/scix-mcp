@@ -15,6 +15,12 @@ export interface MockFetchOptions {
   emptyBody?: boolean;
 }
 
+function abortError(): Error {
+  const error = new Error('The operation was aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
 export function createMockFetch(options: MockFetchOptions = {}) {
   const {
     status = 200,
@@ -27,21 +33,24 @@ export function createMockFetch(options: MockFetchOptions = {}) {
   } = options;
 
   return vi.fn(async (url: string, init?: RequestInit) => {
-    if (delay > 0) {
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-
     if (shouldAbort || init?.signal?.aborted) {
-      const error = new Error('The operation was aborted');
-      error.name = 'AbortError';
-      throw error;
+      throw abortError();
     }
 
-    if (init?.signal) {
-      init.signal.addEventListener('abort', () => {
-        const error = new Error('The operation was aborted');
-        error.name = 'AbortError';
-        throw error;
+    // The delay races the signal rather than being awaited first: awaiting it
+    // would let a cancellation path that never aborts still pass, because the
+    // signal is aborted by the time the delay ends.
+    if (delay > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+          clearTimeout(timer);
+          reject(abortError());
+        };
+        const timer = setTimeout(() => {
+          init?.signal?.removeEventListener('abort', onAbort);
+          resolve();
+        }, delay);
+        init?.signal?.addEventListener('abort', onAbort, { once: true });
       });
     }
 
