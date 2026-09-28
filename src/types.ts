@@ -247,7 +247,6 @@ export interface HealthReport {
 // Consumed subset only, not runtime-validated. Solr fields are optional
 // because ADS drops empty ones; formatters guard with `||` / `?.`.
 export interface Paper {
-  // bibcode is the doc identifier — always requested, never dropped by ADS.
   bibcode: string;
   title?: string[];
   author?: string[];

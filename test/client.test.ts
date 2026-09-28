@@ -31,7 +31,6 @@ describe('SciXAPIClient', () => {
       expect(url).toContain('test/endpoint');
       expect(init.method).toBe('GET');
       expect(init.headers['Authorization']).toBe('Bearer test-api-key');
-      // GET has no body, so no Content-Type header is sent
       expect(init.headers['Content-Type']).toBeUndefined();
     });
 

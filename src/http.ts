@@ -111,7 +111,6 @@ function sendRpcError(res: ServerResponse, status: number, code: number, message
 function rejectAndClose(res: ServerResponse, status: number, code: number, message: string): void {
   res.setHeader('Connection', 'close');
   res.writeHead(status, { 'Content-Type': 'application/json', ...CORS_HEADERS });
-  // Destroyed only once the response has flushed, or the client loses it.
   res.end(JSON.stringify({ jsonrpc: '2.0', error: { code, message }, id: null }), () => {
     res.socket?.destroy();
   });
@@ -125,8 +124,6 @@ async function dispatchRpc(
   token: string,
   body: unknown
 ): Promise<void> {
-  // Aborted on caller disconnect so an abandoned query doesn't keep running
-  // against the caller's rate limit.
   const cancelUpstream = new AbortController();
 
   const server = createServer({

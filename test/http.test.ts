@@ -184,7 +184,6 @@ describe('HTTP transport', () => {
 
     expect(raw).toContain('400');
 
-    // The point of the test: the process is still serving afterwards.
     const after = await fetch(`${baseUrl}/healthz`);
     expect(after.status).toBe(200);
   });
@@ -244,7 +243,6 @@ describe('HTTP transport', () => {
 
     expect(claimingSafe).toEqual(ADDITIVE_ONLY.slice().sort());
 
-    // Read-only tools must not also claim to write.
     for (const tool of tools) {
       if (tool.annotations?.readOnlyHint === true) {
         expect(tool.annotations.destructiveHint).toBe(false);
