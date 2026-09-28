@@ -549,7 +549,7 @@ describe('Library Tools', () => {
 
     it('should perform empty operation', async () => {
       const mockResponse = { number_added: 0 };
-      setupMockFetch({ body: mockResponse });
+      const mockFetch = setupMockFetch({ body: mockResponse });
 
       await libraryOperation(client, {
         library_id: 'lib1',
@@ -557,8 +557,10 @@ describe('Library Tools', () => {
         response_format: ResponseFormat.MARKDOWN
       });
 
-      // Empty operation doesn't need source libraries
-      expect(true).toBe(true);
+      const [, init] = mockFetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.action).toBe('empty');
+      expect(body.libraries).toBeUndefined();
     });
   });
 
