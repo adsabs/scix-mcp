@@ -99,7 +99,6 @@ describe('Search Tool', () => {
         response_format: ResponseFormat.MARKDOWN
       });
 
-      // start (0) + rows (10) = 10 < numFound (150)
       expect(result).toContain('start=10');
     });
 
@@ -121,7 +120,6 @@ describe('Search Tool', () => {
         response_format: ResponseFormat.MARKDOWN
       });
 
-      // start (50) + rows (25) = 75 < numFound (250)
       expect(result).toContain('start=75');
     });
 
@@ -143,7 +141,6 @@ describe('Search Tool', () => {
         response_format: ResponseFormat.MARKDOWN
       });
 
-      // start (0) + rows (20) = 20 >= numFound (10)
       expect(result).not.toContain('start=');
     });
 

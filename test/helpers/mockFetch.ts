@@ -1,6 +1,9 @@
 import { vi } from 'vitest';
 
-let originalFetch: typeof globalThis.fetch | undefined;
+// Captured at module load, before any test can stub it: some tests assign
+// global.fetch directly, so tracking the prior value at install time wouldn't
+// guarantee a clean restore, and a leaked mock breaks suites doing real HTTP.
+const nativeFetch: typeof globalThis.fetch = globalThis.fetch;
 
 export interface MockFetchOptions {
   status?: number;
@@ -12,9 +15,12 @@ export interface MockFetchOptions {
   emptyBody?: boolean;
 }
 
-/**
- * Creates a mock fetch function with configurable responses
- */
+function abortError(): Error {
+  const error = new Error('The operation was aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
 export function createMockFetch(options: MockFetchOptions = {}) {
   const {
     status = 200,
@@ -27,24 +33,24 @@ export function createMockFetch(options: MockFetchOptions = {}) {
   } = options;
 
   return vi.fn(async (url: string, init?: RequestInit) => {
-    // Simulate network delay
-    if (delay > 0) {
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-
-    // Simulate abort
     if (shouldAbort || init?.signal?.aborted) {
-      const error = new Error('The operation was aborted');
-      error.name = 'AbortError';
-      throw error;
+      throw abortError();
     }
 
-    // Check if abort signal triggers during delay
-    if (init?.signal) {
-      init.signal.addEventListener('abort', () => {
-        const error = new Error('The operation was aborted');
-        error.name = 'AbortError';
-        throw error;
+    // The delay races the signal rather than being awaited first: awaiting it
+    // would let a cancellation path that never aborts still pass, because the
+    // signal is aborted by the time the delay ends.
+    if (delay > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+          clearTimeout(timer);
+          reject(abortError());
+        };
+        const timer = setTimeout(() => {
+          init?.signal?.removeEventListener('abort', onAbort);
+          resolve();
+        }, delay);
+        init?.signal?.addEventListener('abort', onAbort, { once: true });
       });
     }
 
@@ -73,30 +79,18 @@ export function createMockFetch(options: MockFetchOptions = {}) {
   });
 }
 
-/**
- * Sets up global fetch mock with default successful response
- */
 export function setupMockFetch(options: MockFetchOptions = {}) {
   const mockFetch = createMockFetch(options);
-  if (originalFetch === undefined) {
-    originalFetch = global.fetch;
-  }
   global.fetch = mockFetch as any;
   return mockFetch;
 }
 
-/**
- * Creates a mock fetch that throws a network error
- */
 export function createNetworkErrorFetch() {
   return vi.fn(async () => {
     throw new Error('Network error');
   });
 }
 
-/**
- * Creates a mock fetch that simulates timeout
- */
 export function createTimeoutFetch(timeoutMs: number = 100) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     return new Promise((_, reject) => {
@@ -106,7 +100,6 @@ export function createTimeoutFetch(timeoutMs: number = 100) {
         reject(error);
       }, timeoutMs);
 
-      // If signal is provided, listen for abort
       if (init?.signal) {
         init.signal.addEventListener('abort', () => {
           clearTimeout(timeout);
@@ -119,20 +112,11 @@ export function createTimeoutFetch(timeoutMs: number = 100) {
   });
 }
 
-/**
- * Restores the original fetch implementation
- */
 export function restoreFetch() {
-  if (originalFetch !== undefined) {
-    global.fetch = originalFetch;
-    originalFetch = undefined;
-  }
+  global.fetch = nativeFetch;
   vi.restoreAllMocks();
 }
 
-/**
- * Helper to verify fetch was called with correct parameters
- */
 export function verifyFetchCall(
   mockFetch: any,
   expectedUrl: string,

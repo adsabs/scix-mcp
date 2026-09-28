@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { SciXAPIClient } from '../../src/client.js';
+import { isAPIKeyConfigured } from '../../src/config.js';
 import {
   setupMockFetch,
   restoreFetch,
@@ -13,6 +14,7 @@ function makeContext(overrides: Partial<HealthCheckContext> = {}): HealthCheckCo
     serverName: 'scix-mcp',
     serverVersion: '9.9.9',
     toolNames: ['search', 'health_check'],
+    tokenConfigured: isAPIKeyConfigured(),
     createClient: () => new SciXAPIClient(),
     ...overrides
   };
@@ -60,6 +62,44 @@ describe('health_check tool', () => {
 
     const report = parseReport(
       await healthCheck(makeContext(), { response_format: ResponseFormat.JSON })
+    );
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(report.token_configured).toBe(false);
+    expect(report.probe.state).toBe('skipped');
+  });
+
+  // Diverges tokenConfigured from the env var so the report provably follows
+  // the context field, as the HTTP transport does, not the process env.
+  it('runs the probe on an injected token when the env var is absent', async () => {
+    delete process.env.SCIX_API_TOKEN;
+    const mockFetch = setupMockFetch({
+      body: { response: { numFound: 1, docs: [{ id: '1' }] } }
+    });
+
+    const report = parseReport(
+      await healthCheck(
+        makeContext({
+          tokenConfigured: true,
+          createClient: () => new SciXAPIClient({ token: 'caller-token' })
+        }),
+        { response_format: ResponseFormat.JSON }
+      )
+    );
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(report.token_configured).toBe(true);
+    expect(report.probe.state).toBe('ok');
+  });
+
+  it('skips the probe when the context reports no token despite the env var', async () => {
+    process.env.SCIX_API_TOKEN = 'ignored-by-context';
+    const mockFetch = setupMockFetch({ body: {} });
+
+    const report = parseReport(
+      await healthCheck(makeContext({ tokenConfigured: false }), {
+        response_format: ResponseFormat.JSON
+      })
     );
 
     expect(mockFetch).not.toHaveBeenCalled();

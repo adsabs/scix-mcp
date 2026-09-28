@@ -1,5 +1,5 @@
 import { SciXAPIClient, SciXAPIError } from '../client.js';
-import { SCIX_API_BASE, REQUEST_TIMEOUT, isAPIKeyConfigured } from '../config.js';
+import { SCIX_API_BASE, REQUEST_TIMEOUT } from '../config.js';
 import {
   HealthCheckInput,
   HealthProbeResult,
@@ -8,13 +8,12 @@ import {
 } from '../types.js';
 import { formatHealthCheckMarkdown } from '../formatters.js';
 
-// Everything health_check needs that lives in index.ts (identity, the live
-// tool-name list, the shared client factory) is passed in so this stays a
-// pure, testable function like the other tools.
 export interface HealthCheckContext {
   serverName: string;
   serverVersion: string;
   toolNames: string[];
+  // From the environment (stdio) or the caller's Authorization header (HTTP).
+  tokenConfigured: boolean;
   createClient: () => SciXAPIClient;
 }
 
@@ -33,14 +32,13 @@ function classifyProbeError(error: unknown): HealthProbeResult {
 }
 
 async function runProbe(context: HealthCheckContext): Promise<HealthProbeResult> {
-  if (!isAPIKeyConfigured()) {
+  if (!context.tokenConfigured) {
     return {
       state: 'skipped',
-      message: 'SCIX_API_TOKEN is not set; skipped the authenticated probe.'
+      message: 'No SciX API token is available; skipped the authenticated probe.'
     };
   }
-  // Cheapest authenticated call: one id-only row. Uses the client's default
-  // 30s timeout (REQUEST_TIMEOUT); a slow/hung API surfaces as `unreachable`.
+  // A hung API surfaces as `unreachable` after the client's REQUEST_TIMEOUT.
   try {
     const client = context.createClient();
     await client.get('search/query', { q: '*:*', rows: 1, fl: 'id' });
@@ -58,7 +56,7 @@ export async function healthCheck(
   const report: HealthReport = {
     server: { name: context.serverName, version: context.serverVersion },
     api_base: SCIX_API_BASE,
-    token_configured: isAPIKeyConfigured(),
+    token_configured: context.tokenConfigured,
     probe,
     tools: [...context.toolNames].sort()
   };

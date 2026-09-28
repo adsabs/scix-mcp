@@ -153,8 +153,11 @@ When building workflows:
 - Use search to confirm paper exists
 
 **Unauthorized (401):**
-- Check SCIX_API_TOKEN environment variable
+- On a local (stdio) server: check the SCIX_API_TOKEN environment variable
+- On a hosted (HTTP) server: send `Authorization: Bearer <token>` with the
+  request — the hosted server holds no token of its own
 - Verify token is valid at scixplorer.org
+- Run `health_check` to tell a setup problem from an API error
 
 **Rate limit (429):**
 - Wait until reset time (check headers)

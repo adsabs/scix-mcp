@@ -83,7 +83,6 @@ export type MetricsInput = z.infer<typeof MetricsInputSchema>;
 export type CitationsInput = z.infer<typeof CitationsInputSchema>;
 export type ExportInput = z.infer<typeof ExportInputSchema>;
 
-// Library Management Types
 export enum LibraryPermission {
   OWNER = 'owner',
   ADMIN = 'admin',
@@ -110,19 +109,16 @@ export enum DocumentAction {
   REMOVE = 'remove'
 }
 
-// Get Libraries
 export const GetLibrariesInputSchema = z.object({
   type: z.enum(LibraryType).default(LibraryType.ALL).describe('Filter by library type'),
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Get Library
 export const GetLibraryInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Create Library
 export const CreateLibraryInputSchema = z.object({
   name: z.string().min(1).max(255).describe('Library name'),
   description: z.string().max(1000).optional().describe('Library description'),
@@ -131,13 +127,11 @@ export const CreateLibraryInputSchema = z.object({
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Delete Library
 export const DeleteLibraryInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Edit Library Metadata
 export const EditLibraryInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   name: z.string().min(1).max(255).optional().describe('New library name'),
@@ -146,7 +140,6 @@ export const EditLibraryInputSchema = z.object({
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Add/Remove Documents
 export const ManageDocumentsInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   bibcodes: z.array(z.string()).min(1).max(2000).describe('List of bibcodes'),
@@ -154,7 +147,6 @@ export const ManageDocumentsInputSchema = z.object({
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Add Documents by Query
 export const AddDocumentsByQueryInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   query: z.string().min(1).describe('SciX search query'),
@@ -162,7 +154,6 @@ export const AddDocumentsByQueryInputSchema = z.object({
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Library Operation
 export const LibraryOperationInputSchema = z.object({
   library_id: z.string().min(1).describe('Target library identifier'),
   operation: z.enum(LibraryOperation).describe('Operation to perform'),
@@ -172,13 +163,11 @@ export const LibraryOperationInputSchema = z.object({
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Get Permissions
 export const GetPermissionsInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Update Permissions
 export const UpdatePermissionsInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   email: z.string().email().describe('User email to grant/modify permissions'),
@@ -186,21 +175,18 @@ export const UpdatePermissionsInputSchema = z.object({
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Transfer Library
 export const TransferLibraryInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   email: z.string().email().describe('Email of new owner'),
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Get Annotation
 export const GetAnnotationInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   bibcode: z.string().min(1).describe('Bibcode to get annotation for'),
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Add/Update Annotation
 export const ManageAnnotationInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   bibcode: z.string().min(1).describe('Bibcode to annotate'),
@@ -208,7 +194,6 @@ export const ManageAnnotationInputSchema = z.object({
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
-// Delete Annotation
 export const DeleteAnnotationInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   bibcode: z.string().min(1).describe('Bibcode to remove annotation from'),
@@ -230,7 +215,6 @@ export type GetAnnotationInput = z.infer<typeof GetAnnotationInputSchema>;
 export type ManageAnnotationInput = z.infer<typeof ManageAnnotationInputSchema>;
 export type DeleteAnnotationInput = z.infer<typeof DeleteAnnotationInputSchema>;
 
-// Search Documentation
 export const SearchDocsInputSchema = z.object({
   query: z.string().min(1).max(500).describe('Natural language search query for documentation'),
   limit: z.number().int().min(1).max(20).default(5).describe('Maximum number of results to return'),
@@ -238,14 +222,12 @@ export const SearchDocsInputSchema = z.object({
 
 export type SearchDocsInput = z.infer<typeof SearchDocsInputSchema>;
 
-// Health Check
 export const HealthCheckInputSchema = z.object({
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
 export type HealthCheckInput = z.infer<typeof HealthCheckInputSchema>;
 
-// health_check report shapes (server-produced, not an ADS response).
 export type ProbeState = 'ok' | 'unauthorized' | 'rate_limited' | 'unreachable' | 'skipped';
 
 export interface HealthProbeResult {
@@ -262,17 +244,9 @@ export interface HealthReport {
   tools: string[];
 }
 
-// Response Types
-//
-// Plain interfaces for the ADS/SciX response shapes consumed by the tools
-// and formatters — the consumed subset only, not the full ADS universe, and
-// not runtime-validated. Solr fields are optional: ADS drops empty ones, so
-// formatters guard with `||` / `?.`. biblib metadata below is required (the
-// API returns it whole).
-
-// Solr document (search/query `docs[]`), limited to DEFAULT_FIELDS usage.
+// Consumed subset only, not runtime-validated. Solr fields are optional
+// because ADS drops empty ones; formatters guard with `||` / `?.`.
 export interface Paper {
-  // bibcode is the doc identifier — always requested, never dropped by ADS.
   bibcode: string;
   title?: string[];
   author?: string[];
@@ -286,7 +260,6 @@ export interface Paper {
   identifier?: string | unknown[];
 }
 
-// search/query envelope.
 export interface SolrResponse {
   response?: {
     numFound?: number;
@@ -295,7 +268,6 @@ export interface SolrResponse {
   };
 }
 
-// metrics endpoint response (consumed subset).
 export interface MetricsIndicators {
   h?: number;
   g?: number;
@@ -324,12 +296,10 @@ export interface Metrics {
   'basic stats'?: MetricsBasicStats;
 }
 
-// export endpoint response.
 export interface ExportResponse {
   export?: string;
 }
 
-// biblib library metadata.
 export interface LibraryMetadata {
   id: string;
   name: string;
@@ -343,8 +313,7 @@ export interface LibraryMetadata {
   num_users: number;
 }
 
-// Library mutation responses may return metadata at the root or under
-// `metadata` — model both by widening with the optional metadata fields.
+// Library mutations may return metadata at the root or under `metadata`.
 export interface LibraryMetadataResponse extends Partial<LibraryMetadata> {
   metadata?: LibraryMetadata;
 }

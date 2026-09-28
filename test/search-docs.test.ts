@@ -5,7 +5,8 @@ const MAX_SNIPPET_LENGTH = 260;
 
 describe("searchDocs", () => {
   beforeAll(async () => {
-    // Warm the lazily-built MiniSearch index before the timed suites run.
+    // Warms the lazily-built MiniSearch index so the first real assertion
+    // isn't timing index construction.
     await searchDocs("search", 1);
   });
 

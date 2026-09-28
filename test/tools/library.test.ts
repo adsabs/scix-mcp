@@ -446,8 +446,8 @@ describe('Library Tools', () => {
     });
 
     it('should not fall back when a non-404 error message merely contains "not found"', async () => {
-      // A 500 whose ADS body says "not found" must NOT trigger the search
-      // fallback — only a genuine 404 should. The fallback is status-driven.
+      // The fallback is status-driven: a 500 saying "not found" must not
+      // trigger it, only a genuine 404 should.
       const mockFetch = vi.fn().mockResolvedValueOnce({
         ok: false,
         status: 500,
@@ -468,7 +468,6 @@ describe('Library Tools', () => {
         })
       ).rejects.toThrow();
 
-      // Only the query endpoint was hit — no fallback search/add calls.
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(mockFetch.mock.calls[0][0]).toContain('biblib/documents/lib1/query');
     });
@@ -550,7 +549,7 @@ describe('Library Tools', () => {
 
     it('should perform empty operation', async () => {
       const mockResponse = { number_added: 0 };
-      setupMockFetch({ body: mockResponse });
+      const mockFetch = setupMockFetch({ body: mockResponse });
 
       await libraryOperation(client, {
         library_id: 'lib1',
@@ -558,8 +557,10 @@ describe('Library Tools', () => {
         response_format: ResponseFormat.MARKDOWN
       });
 
-      // Empty operation doesn't need source libraries
-      expect(true).toBe(true);
+      const [, init] = mockFetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.action).toBe('empty');
+      expect(body.libraries).toBeUndefined();
     });
   });
 
@@ -708,6 +709,37 @@ describe('Library Tools', () => {
       expect(init.method).toBe('DELETE');
 
       expect(result).toContain('Annotation deleted successfully');
+    });
+
+    // Regression: the schema accepts any nonempty string and new URL() resolves
+    // dot segments, so this bibcode turned an annotation delete into
+    // DELETE biblib/documents/lib1 — the delete-library endpoint.
+    it('refuses a bibcode that would retarget the request at another endpoint', async () => {
+      const mockFetch = setupMockFetch({ body: {} });
+
+      await expect(
+        deleteAnnotation(client, {
+          library_id: 'lib1',
+          bibcode: '../../../documents/lib1',
+          response_format: ResponseFormat.MARKDOWN
+        })
+      ).rejects.toThrow(/Invalid bibcode/);
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('refuses a library_id containing path delimiters', async () => {
+      const mockFetch = setupMockFetch({ body: {} });
+
+      await expect(
+        deleteAnnotation(client, {
+          library_id: '../../documents/other',
+          bibcode: '2024ApJ...123..456A',
+          response_format: ResponseFormat.MARKDOWN
+        })
+      ).rejects.toThrow(/Invalid library_id/);
+
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 });

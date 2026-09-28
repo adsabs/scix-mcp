@@ -11,8 +11,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const usageGuidePath = path.join(__dirname, '..', 'USAGE_GUIDE.md');
 const promptsDir = path.join(__dirname, '..', 'prompts');
 
-// All tools the server is expected to advertise and dispatch through the
-// MCP protocol. Parity is exercised end-to-end via an in-memory client.
 const EXPECTED_TOOL_NAMES = [
   'search',
   'get_paper',
