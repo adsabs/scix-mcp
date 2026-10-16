@@ -65,7 +65,7 @@ Create **custom bibliography formats** using printf-like field specifiers:
 - `%V` - Volume
 - `%p` - Page or article ID
 - `%G` - Author list (surname, initials)
-- `%u` - URL to ADS abstract page
+- `%u` - URL to the record's abstract page
 
 ### Encoding Options
 

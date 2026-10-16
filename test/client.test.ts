@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { SciXAPIClient, SciXAPIError } from '../src/client.js';
+import { SciXAPIClient, SciXAPIError, repeated } from '../src/client.js';
 import { setupMockFetch, createTimeoutFetch, restoreFetch } from './helpers/mockFetch.js';
-import { REQUEST_TIMEOUT } from '../src/config.js';
+import { REQUEST_TIMEOUT, CLIENT_SOURCE, CLIENT_SOURCE_HEADER } from '../src/config.js';
 
 describe('SciXAPIClient', () => {
   let client: SciXAPIClient;
@@ -58,6 +58,30 @@ describe('SciXAPIClient', () => {
 
       const [url] = mockFetch.mock.calls[0];
       expect(url).toContain('fields=title%2Cauthor%2Cyear');
+    });
+
+    it('repeats a RepeatedParam once per value instead of comma-joining', async () => {
+      const mockFetch = setupMockFetch({ body: {} });
+
+      await client.get('search/query', {
+        q: 'star',
+        fq: repeated(['property:"refereed"', 'database:"astronomy"'])
+      });
+
+      const url = new URL(mockFetch.mock.calls[0][0] as string);
+      expect(url.searchParams.getAll('fq')).toEqual([
+        'property:"refereed"',
+        'database:"astronomy"'
+      ]);
+    });
+
+    it('emits nothing for an empty RepeatedParam', async () => {
+      const mockFetch = setupMockFetch({ body: {} });
+
+      await client.get('search/query', { q: 'star', fq: repeated([]) });
+
+      const url = new URL(mockFetch.mock.calls[0][0] as string);
+      expect(url.searchParams.has('fq')).toBe(false);
     });
 
     it('should skip null and undefined parameters', async () => {
@@ -273,6 +297,33 @@ describe('SciXAPIClient', () => {
       await client.delete('test');
       const [, deleteInit] = mockFetch.mock.calls[3];
       expect(deleteInit.headers['Authorization']).toBe('Bearer test-api-key');
+    });
+  });
+
+  describe('client source header', () => {
+    it('tags every request method so SciX access logs can attribute MCP traffic', async () => {
+      const mockFetch = setupMockFetch({ body: {} });
+
+      await client.get('test');
+      await client.post('test', {});
+      await client.put('test', {});
+      await client.delete('test');
+
+      expect(mockFetch.mock.calls).toHaveLength(4);
+      for (const [, init] of mockFetch.mock.calls) {
+        expect(init.headers[CLIENT_SOURCE_HEADER]).toBe('scix-mcp');
+      }
+    });
+
+    it('keeps the tag stable while User-Agent carries version and transport', async () => {
+      const mockFetch = setupMockFetch({ body: {} });
+
+      await new SciXAPIClient({ transport: 'http' }).get('test');
+
+      const [, init] = mockFetch.mock.calls[0];
+      expect(init.headers[CLIENT_SOURCE_HEADER]).toBe(CLIENT_SOURCE);
+      expect(init.headers[CLIENT_SOURCE_HEADER]).not.toContain('transport');
+      expect(init.headers['User-Agent']).toContain('transport=http');
     });
   });
 

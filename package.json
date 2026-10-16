@@ -1,7 +1,7 @@
 {
   "name": "scix-mcp",
   "version": "1.2.0",
-  "description": "MCP server for NASA Astrophysics Data System API",
+  "description": "MCP server for the SciX API",
   "type": "module",
   "bin": {
     "scix-mcp": "./build/index.js",
@@ -27,7 +27,8 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "nasa",
+    "scix",
+    "scixplorer",
     "ads",
     "astrophysics",
     "astronomy",

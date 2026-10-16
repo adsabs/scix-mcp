@@ -1,5 +1,7 @@
 import type { SearchResult } from './search-docs.js';
 import type { HealthReport, Paper, Metrics } from './types.js';
+import { abstractUrl, searchUrl } from './scix-urls.js';
+import type { FacetGroup } from './facets.js';
 
 const PROBE_LABELS: Record<HealthReport['probe']['state'], string> = {
   ok: 'ok',
@@ -63,6 +65,7 @@ export function formatPaperMarkdown(paper: Paper): string {
   let result = `# ${paper.title?.[0] || 'Untitled'}\n\n`;
   result += `**Authors:** ${authorStr}\n\n`;
   result += `**Bibcode:** ${paper.bibcode}\n\n`;
+  result += `**SciX:** ${abstractUrl(paper.bibcode)}\n\n`;
   result += `**Year:** ${paper.year || 'N/A'}\n\n`;
   result += `**Publication:** ${paper.pub || 'N/A'}\n\n`;
 
@@ -107,7 +110,8 @@ function formatPaperListItem(paper: Paper, idx: number): string {
     `${idx + 1}. **${title}**\n` +
     `   - ${firstAuthor} (${year})\n` +
     `   - Bibcode: \`${paper.bibcode}\`\n` +
-    `   - Citations: ${citations}\n\n`
+    `   - Citations: ${citations}\n` +
+    `   - SciX: ${abstractUrl(paper.bibcode)}\n\n`
   );
 }
 
@@ -117,6 +121,49 @@ export function formatPapersListMarkdown(papers: Paper[], total: number): string
   papers.forEach((paper, idx) => {
     result += formatPaperListItem(paper, idx);
   });
+
+  return result;
+}
+
+function formatFacetGroup(group: FacetGroup): string {
+  const shown = group.buckets.length;
+  const total = group.total_buckets;
+  const scope = total !== undefined && total > shown
+    ? `showing ${shown} of ${total}`
+    : `${shown}`;
+
+  let result = `## ${group.label} (${scope})\n\n`;
+  result += `Field: \`${group.field}\`\n\n`;
+
+  if (shown === 0) {
+    return `${result}No values for this facet.\n`;
+  }
+
+  for (const bucket of group.buckets) {
+    result += `- **${bucket.label}** — ${bucket.count}\n`;
+    result += `  - filter_query: \`${bucket.filter}\`\n`;
+    if (bucket.child_prefix) {
+      result += `  - expandable: prefix \`${bucket.child_prefix}\`\n`;
+    }
+  }
+
+  return `${result}\n`;
+}
+
+export function formatFacetsMarkdown(
+  groups: FacetGroup[],
+  query: string,
+  filterQuery: string[]
+): string {
+  let result = `# Facets for \`${query}\`\n\n`;
+
+  if (filterQuery.length > 0) {
+    result += `Filtered by: ${filterQuery.map((fq) => `\`${fq}\``).join(', ')}\n\n`;
+  }
+
+  result += `[View on SciX](${searchUrl(query, filterQuery)})\n\n`;
+  result += groups.map(formatFacetGroup).join('');
+  result += `Pass any \`filter_query\` value above to \`search\` to narrow results.\n`;
 
   return result;
 }

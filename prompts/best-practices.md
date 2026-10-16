@@ -37,6 +37,16 @@ Example: `2019ApJ...886..145M`
    - Use `markdown` for human review
    - Use `json` only when parsing programmatically
 
+**Prefer one faceted call over many probing searches:**
+`get_facets` batches every requested facet into a single Solr request. Asking
+for the distribution once beats running a dozen speculative searches to work
+out which constraint narrows a result set.
+
+**Prefer `filter_query` over rewriting `query`:**
+Solr caches filters independently of the main query, so reusing the same
+`query` with different `filter_query` values is cheaper than re-parsing a new
+combined query string each time.
+
 ### Large Result Sets
 
 For pagination beyond 100 results:
@@ -47,7 +57,7 @@ For pagination beyond 100 results:
 - Loop until `nextCursorMark` repeats
 
 For bulk queries:
-- Use ADS BigQuery endpoint (not via this MCP server)
+- Use the SciX BigQuery endpoint (not via this MCP server)
 - Avoids thousands of individual `search` calls
 
 ## Error Handling
@@ -73,7 +83,7 @@ For bulk queries:
 
 **Rate limits:**
 - Default: 5000 requests/day per API key
-- Contact adshelp@cfa.harvard.edu for higher limits
+- Request higher limits at https://scixplorer.org/feedback/general
 - Monitor rate limit headers in responses
 
 ## Rate Limits
@@ -172,6 +182,6 @@ When building workflows:
 ## Support Resources
 
 - **SciX Homepage**: https://scixplorer.org/
-- **API Documentation**: https://github.com/adsabs/adsabs-dev-api
-- **Search Syntax**: https://adsabs.github.io/help/search/search-syntax
-- **API Issues**: adshelp@cfa.harvard.edu
+- **API Documentation**: https://scixplorer.org/scixhelp/api-scix
+- **Search Syntax**: https://scixplorer.org/scixhelp/search-scix/search-syntax
+- **API Issues**: https://scixplorer.org/feedback/general

@@ -32,6 +32,10 @@ export function readServerVersion(): string {
   throw new Error(`Could not read version from ${pkgPath}`);
 }
 
+export const CLIENT_SOURCE_HEADER = 'X-Client-Source';
+
+export const CLIENT_SOURCE = SERVER_NAME;
+
 export function buildUserAgent(transport: TransportKind): string {
   if (!cachedVersion) {
     cachedVersion = readServerVersion();
@@ -49,7 +53,13 @@ const configuredBase = process.env.SCIX_API_BASE?.trim();
 export const SCIX_API_BASE =
   configuredBase && configuredBase.length > 0
     ? configuredBase
-    : 'https://api.adsabs.harvard.edu/v1';
+    : 'https://api.scixplorer.org/v1';
+
+const configuredWebBase = process.env.SCIX_WEB_BASE?.trim();
+export const SCIX_WEB_BASE =
+  configuredWebBase && configuredWebBase.length > 0
+    ? configuredWebBase.replace(/\/+$/, '')
+    : 'https://scixplorer.org';
 
 export const DEFAULT_FIELDS = [
   'bibcode',

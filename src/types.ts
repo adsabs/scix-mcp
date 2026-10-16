@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import { DEFAULT_FACET_IDS, FACET_IDS } from './facets.js';
+
+const FilterQuerySchema = z.array(z.string().min(1).max(500)).max(20)
+  .describe(
+    'Solr filter queries (fq), each applied independently and ANDed together, ' +
+    'e.g. author_facet_hier:"0/Smith, J". Use the `filter` value returned by get_facets.'
+  );
 
 export enum ResponseFormat {
   MARKDOWN = 'markdown',
@@ -15,6 +22,7 @@ export enum SortOrder {
 
 export const SearchInputSchema = z.object({
   query: z.string().min(1).max(1000).describe('SciX search query using Solr syntax'),
+  filter_query: FilterQuerySchema.optional(),
   rows: z.number().int().min(1).max(100).default(10).describe('Number of results to return'),
   start: z.number().int().min(0).default(0).describe('Starting offset for pagination'),
   sort: z.enum(SortOrder).default(SortOrder.RELEVANCE).describe('Sort order for results'),
@@ -77,7 +85,32 @@ export const ExportInputSchema = z.object({
   path: ['custom_format']
 });
 
+export const FacetSortSchema = z.enum(['count desc', 'count asc', 'index asc', 'index desc']);
+
+export const GetFacetsInputSchema = z.object({
+  query: z.string().min(1).max(1000).describe('SciX search query to facet over, using Solr syntax'),
+  filter_query: FilterQuerySchema.optional(),
+  facets: z.array(z.enum(FACET_IDS)).min(1).max(FACET_IDS.length)
+    .default([...DEFAULT_FACET_IDS])
+    .describe(`Facets to count. Available: ${FACET_IDS.join(', ')}`),
+  limit: z.number().int().min(1).max(200).default(10)
+    .describe('Maximum buckets returned per facet'),
+  sort: FacetSortSchema.default('count desc')
+    .describe('Bucket ordering: by count, or by value ("index")'),
+  prefix: z.string().max(200).optional()
+    .describe(
+      'Drill into a hierarchical facet by restricting buckets to this prefix, ' +
+      'e.g. "1/Smith, J/". Use the `child_prefix` returned for an expandable bucket. ' +
+      'Only valid when exactly one facet is requested.'
+    ),
+  response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
+}).refine((data) => (data.prefix === undefined ? true : data.facets.length === 1), {
+  message: 'prefix is only valid when exactly one facet is requested',
+  path: ['prefix']
+});
+
 export type SearchInput = z.infer<typeof SearchInputSchema>;
+export type GetFacetsInput = z.infer<typeof GetFacetsInputSchema>;
 export type GetPaperInput = z.infer<typeof GetPaperInputSchema>;
 export type MetricsInput = z.infer<typeof MetricsInputSchema>;
 export type CitationsInput = z.infer<typeof CitationsInputSchema>;

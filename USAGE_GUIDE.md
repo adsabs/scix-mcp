@@ -1,11 +1,14 @@
 # SciX MCP Server - Usage Guide
 
-This server provides access to NASA's Astrophysics Data System (SciX/ADS) for searching astronomical literature, analyzing citations, and managing research collections.
+This server provides access to SciX for searching astronomical literature, analyzing citations, and managing research collections.
+
+Link to records as `https://scixplorer.org/abs/<bibcode>/abstract`. Tool output already includes these links; use them as given rather than constructing ADS URLs.
 
 ## Quick Start
 
 **What you can do:**
 - Search 15M+ astronomy papers with advanced queries
+- Break a result set down by facet, then filter on what you find
 - Get paper details, citations, and metrics
 - Export bibliographies in BibTeX, AASTeX, EndNote formats
 - Create and manage personal paper libraries
@@ -34,6 +37,32 @@ The `search` tool uses Solr query syntax:
 **Citation searches:**
 - `citations(identifier:X)` - Papers citing X
 - `references(identifier:X)` - Papers cited by X
+
+## Faceting
+
+`get_facets` reports how a result set distributes across a facet, so you can
+narrow a search from evidence instead of guesswork.
+
+```
+get_facets(query="exoplanet atmospheres", facets=["author", "year", "publications"])
+```
+
+Each bucket comes back with a count and a ready-made `filter` string. Pass
+those to `search` as `filter_query`:
+
+```
+search(query="exoplanet atmospheres",
+       filter_query=['author_facet_hier:"0/Smith, J"', 'property:"refereed"'])
+```
+
+Facets: `author`, `collections`, `refereed`, `institutions`, `keywords`,
+`publications`, `bibgroups`, `simbad`, `ned`, `award`, `data`, `vizier`,
+`pubtype`, `planetary`, `uat`, `year`.
+
+Hierarchical facets (`author`, `institutions`, `simbad`, `ned`, `award`,
+`pubtype`, `planetary`) use level-prefixed values such as `0/Smith, J`. To
+drill into one, request that facet alone and pass the bucket's `child_prefix`
+as `prefix`.
 
 **Boolean operators (UPPERCASE required):**
 - `AND`, `OR`, `NOT`
@@ -84,7 +113,8 @@ The `search` tool uses Solr query syntax:
 ## Key Tools Reference
 
 ### Search & Discovery
-- **search** - Main search tool. Params: `query` (required), `rows` (1-100, default 10), `start` (pagination), `sort`, `response_format`
+- **search** - Main search tool. Params: `query` (required), `filter_query` (Solr `fq` strings, ANDed), `rows` (1-100, default 10), `start` (pagination), `sort`, `response_format`
+- **get_facets** - Facet counts for a query. Params: `query` (required), `filter_query`, `facets`, `limit` (1-200, default 10), `sort`, `prefix`, `response_format`
 - **get_paper** - Full details for one paper. Params: `bibcode`
 
 ### Citation Analysis
@@ -124,7 +154,7 @@ The `search` tool uses Solr query syntax:
 
 **Rate Limits:**
 - 5000 requests/day per API token
-- Contact adshelp@cfa.harvard.edu for higher limits
+- Request higher limits at https://scixplorer.org/feedback/general
 
 **Error Handling:**
 - No results? Broaden terms, check spelling, verify field syntax
@@ -174,6 +204,6 @@ Public libraries: `https://scixplorer.org/public-libraries/<library_id>`
 ## Support
 
 - **SciX Homepage**: https://scixplorer.org/
-- **API Docs**: https://github.com/adsabs/adsabs-dev-api
-- **Search Syntax**: https://adsabs.github.io/help/search/search-syntax
-- **API Issues**: adshelp@cfa.harvard.edu
+- **API Docs**: https://scixplorer.org/scixhelp/api-scix
+- **Search Syntax**: https://scixplorer.org/scixhelp/search-scix/search-syntax
+- **API Issues**: https://scixplorer.org/feedback/general

@@ -1,6 +1,6 @@
-# NASA SciX MCP Server
+# SciX MCP Server
 
-A Model Context Protocol (MCP) server for the NASA Astrophysics Data System (SciX) API. This server enables LLMs to search astronomical literature, retrieve paper metadata, analyze citation metrics, and export bibliographic data.
+A Model Context Protocol (MCP) server for the SciX API. This server enables LLMs to search astronomical literature, retrieve paper metadata, analyze citation metrics, and export bibliographic data.
 
 ## Quick Start (MCP clients)
 
@@ -28,7 +28,7 @@ Add to your MCP client configuration:
 ```json
 {
   "mcpServers": {
-    "ads": {
+    "scix": {
       "command": "npx",
       "args": ["scix-mcp"],
       "env": {
@@ -45,11 +45,13 @@ Local MCP clients that read `.mcp/server.json` can also pick up the packaged con
 
 ### Environment variables
 
-- `SCIX_API_TOKEN` (required for stdio): your SciX/ADS API key. Not used by the
+- `SCIX_API_TOKEN` (required for stdio): your SciX API key. Not used by the
   HTTP transport, which takes the token from each request.
 - `SCIX_API_BASE` (optional): override the API base URL. Defaults to
-  `https://api.adsabs.harvard.edu/v1` when unset. Primarily used to point the
+  `https://api.scixplorer.org/v1` when unset. Primarily used to point the
   server at a local mock during the e2e test suite.
+- `SCIX_WEB_BASE` (optional): override the host used when building the
+  scixplorer.org links in tool output. Defaults to `https://scixplorer.org`.
 - `PORT` / `HOST` (HTTP only): where the HTTP transport listens. Default
   `8000` on `0.0.0.0`.
 
@@ -83,6 +85,7 @@ cannot use this endpoint.
 ## Features
 
 - **Literature Search**: Full-text search with advanced Solr query syntax
+- **Faceting**: Break a result set down by any of the 16 SciX facets and feed the counts back as filters via the `get_facets` tool
 - **Paper Details**: Retrieve metadata for any publication
 - **Citation Metrics**: Calculate h-index, citation counts, and usage statistics
 - **Citation Network**: Explore forward and backward citations
@@ -95,8 +98,32 @@ cannot use this endpoint.
 
 ### Search & Metadata
 
-- `search`: Solr-powered search across SciX. Params: `query` (required), `rows` (1-100, default 10), `start` (offset, default 0), `sort` (`score desc` | `citation_count desc` | `date desc` | `date asc` | `read_count desc`, default `score desc`), `response_format` (`markdown` | `json`, default `markdown`).
+- `search`: Solr-powered search across SciX. Params: `query` (required), `filter_query` (up to 20 Solr `fq` strings, each sent as its own repeated parameter and ANDed together), `rows` (1-100, default 10), `start` (offset, default 0), `sort` (`score desc` | `citation_count desc` | `date desc` | `date asc` | `read_count desc`, default `score desc`), `response_format` (`markdown` | `json`, default `markdown`).
   - Example queries: `author:"Einstein, A." title:relativity`, `black holes year:2020-2023`, `author:^Smith`, `dark energy AND galaxy clusters`.
+- `get_facets`: Count how a result set breaks down across facets, so a search can be narrowed. Params: `query` (required), `filter_query`, `facets` (default `author`, `year`, `publications`, `keywords`, `refereed`, `collections`), `limit` (1-200 buckets per facet, default 10), `sort` (`count desc` | `count asc` | `index asc` | `index desc`), `prefix` (drill into a hierarchy; only valid with exactly one facet), `response_format`.
+  - Every bucket carries a `filter` string ready to pass straight back as a `search` `filter_query` entry.
+  - Available facets, with the Solr field each one counts:
+
+    | Facet | Solr field | Hierarchical |
+    | --- | --- | --- |
+    | `author` | `author_facet_hier` | yes (2 levels) |
+    | `collections` | `database` | no |
+    | `refereed` | `property` | no |
+    | `institutions` | `aff_facet_hier` | yes (2 levels) |
+    | `keywords` | `keyword_facet` | no |
+    | `publications` | `pub_abbrev` | no |
+    | `bibgroups` | `bibgroup_facet` | no |
+    | `simbad` | `simbad_object_facet_hier` | yes (2 levels) |
+    | `ned` | `ned_object_facet_hier` | yes (2 levels) |
+    | `award` | `grant_facet_hier` | yes (2 levels) |
+    | `data` | `data_facet` | no |
+    | `vizier` | `vizier_facet` | no |
+    | `pubtype` | `doctype_facet_hier` | yes (2 levels) |
+    | `planetary` | `planetary_feature_facet_hier_3level` | yes (3 levels) |
+    | `uat` | `uat` | no |
+    | `year` | `year` | no |
+
+  - Hierarchical facet values are prefixed with their level, e.g. `0/Smith, J` at the root and `1/Smith, J/Smith, John` one level down. Expandable buckets report a `child_prefix` to pass back as `prefix`.
 - `get_paper`: Fetch a paper by `bibcode`, DOI, arXiv ID, or SciX ID (`scix:...`) with optional `response_format`.
 - `get_metrics`: Metrics for `bibcodes` (1-2000) with optional `response_format`; returns h-index, g-index, citation counts, usage stats.
 
@@ -144,7 +171,7 @@ cannot use this endpoint.
 
 - **5000 requests per day** per API key
 - Rate limit info is returned in response headers
-- Contact adshelp@cfa.harvard.edu for higher limits
+- Request higher limits at https://scixplorer.org/feedback/general
 
 ## SciX Search Syntax
 
@@ -161,6 +188,19 @@ The SciX search supports Solr query syntax:
 | `citations(bibcode:X)`  | Papers citing X   | `citations(bibcode:2019ApJ...)`  |
 | `references(bibcode:X)` | Papers cited by X | `references(bibcode:2019ApJ...)` |
 | `AND`, `OR`, `NOT`      | Boolean operators | `black holes AND galaxy`         |
+
+Values discovered through `get_facets` are better applied as `filter_query`
+entries than folded into `query`: Solr caches filters separately, and the
+facet/filter split is what the SciX web UI does.
+
+## Outbound request tagging
+
+Every request this server makes to the SciX API carries:
+
+- `X-Client-Source: scix-mcp` — a stable, low-cardinality tag so SciX access
+  logs can attribute MCP traffic without parsing User-Agent.
+- `User-Agent: scix-mcp/<version> (transport=stdio|http)` — version and
+  transport detail.
 
 ## Development
 
@@ -198,7 +238,7 @@ pnpm test:watch
 pnpm test:coverage
 
 # Run the end-to-end protocol smoke suite (builds first, then drives the
-# built server over stdio against a local mock ADS API)
+# built server over stdio against a local mock SciX API)
 pnpm test:e2e
 ```
 
@@ -220,6 +260,7 @@ test/
 ├── search-docs.test.ts     # Documentation search tests
 └── tools/
     ├── search.test.ts      # Search tool tests
+    ├── facets.test.ts      # Facet counts tool tests
     ├── paper.test.ts       # Paper details tests
     ├── metrics.test.ts     # Metrics tests
     ├── citations.test.ts   # Citations/references tests
@@ -232,7 +273,8 @@ test/
 The test suite covers:
 
 - **HTTP Client**: GET/POST/PUT/DELETE methods, error handling (401/404/429), timeouts, request formatting
-- **Search Tools**: Query parameter encoding, pagination, result limiting, response formatting
+- **Search Tools**: Query parameter encoding, repeated `fq` filters, pagination, result limiting, response formatting
+- **Facets**: Registry/field mapping, `json.facet` request bodies, hierarchical prefix handling, bucket parsing
 - **Paper Tools**: Bibcode validation, field selection, error handling for missing papers
 - **Metrics Tools**: Batch bibcode processing, MAX_BIBCODES limits, metric type selection
 - **Citation Tools**: Forward/backward citations, sorting, row limits
@@ -253,9 +295,12 @@ src/
 ├── formatters.ts        # Response formatting utilities
 ├── config.ts            # Configuration constants
 ├── identifier-query.ts  # Identifier (bibcode/DOI/arXiv/SciX) resolution
+├── facets.ts            # Facet registry, json.facet building, bucket parsing
+├── scix-urls.ts         # scixplorer.org link builders
 ├── search-docs.ts       # Offline docs search (search_docs tool)
 └── tools/
     ├── search.ts        # Search tool
+    ├── facets.ts        # Facet counts tool
     ├── paper.ts         # Paper details tool
     ├── metrics.ts       # Metrics tool
     ├── citations.ts     # Citation network tools
@@ -269,6 +314,13 @@ src/
 
 ```
 Use search with query "supernova 2023" to find recent supernova papers
+```
+
+### Narrow a search with facets
+
+```
+Use get_facets with query "exoplanet atmospheres" to see the top authors,
+journals and years, then call search with the filter_query values it returns.
 ```
 
 ### Get paper details
@@ -302,8 +354,8 @@ The server provides clear error messages:
 ## Resources
 
 - [SciX Homepage](https://scixplorer.org/)
-- [SciX API Documentation](https://github.com/adsabs/adsabs-dev-api)
-- [SciX Search Syntax](https://adsabs.github.io/help/search/search-syntax)
+- [SciX API Documentation](https://scixplorer.org/scixhelp/api-scix)
+- [SciX Search Syntax](https://scixplorer.org/scixhelp/search-scix/search-syntax)
 - [MCP Documentation](https://modelcontextprotocol.io/)
 
 ## License
@@ -312,5 +364,5 @@ MIT
 
 ## Support
 
-For API issues: adshelp@cfa.harvard.edu
+For API issues: https://scixplorer.org/feedback/general
 For server issues: Open an issue on GitHub

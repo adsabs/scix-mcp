@@ -38,9 +38,39 @@ The `search` tool is your primary method for finding astronomical papers. It use
 - Use `start` parameter for pagination (e.g., start=0, start=10, start=20)
 - For large result sets (>100), use Solr cursormark pagination
 
+## Narrowing With Facets
+
+`get_facets` shows how a result set breaks down before you commit to a filter:
+
+```
+get_facets(
+  query="exoplanet atmospheres",
+  facets=["author", "year", "publications", "refereed"]
+)
+```
+
+Each bucket returns a count and a `filter` string. Apply it via `search`'s
+`filter_query` rather than editing the query text — Solr caches filters
+separately, and it keeps the topic and the constraints independent:
+
+```
+search(
+  query="exoplanet atmospheres",
+  filter_query=['property:"refereed"', 'pub_abbrev:"ApJ"']
+)
+```
+
+Facets available: `author`, `collections`, `refereed`, `institutions`,
+`keywords`, `publications`, `bibgroups`, `simbad`, `ned`, `award`, `data`,
+`vizier`, `pubtype`, `planetary`, `uat`, `year`.
+
+Hierarchical facets return level-prefixed values (`0/Smith, J`). Request a
+single facet and pass a bucket's `child_prefix` as `prefix` to expand it.
+
 ## Query Construction Best Practices
 
-1. **Start broad, refine narrow**: Begin with key terms, then add filters
+1. **Start broad, refine narrow**: Begin with key terms, then use `get_facets`
+   to pick filters from the actual distribution
 2. **Use field-specific searches**: More accurate than full-text
 3. **Check numFound**: If too many results, add filters; if too few, broaden
 4. **Combine strategically**: Use parentheses to group conditions
@@ -66,7 +96,7 @@ search(
 ```
 
 **Literature review workflow:**
-1. Broad search with topic + year range
+1. Broad search with topic + year range, then `get_facets` to see the shape
 2. Use `get_metrics` on top results to identify key papers
 3. Use `get_references` on key papers for foundational work
 4. Use `get_citations` to find recent developments
