@@ -39,12 +39,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/thostetler/scix-mcp.git"
+    "url": "https://github.com/adsabs/scix-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/thostetler/scix-mcp/issues"
+    "url": "https://github.com/adsabs/scix-mcp/issues"
   },
-  "homepage": "https://github.com/thostetler/scix-mcp#readme",
+  "homepage": "https://github.com/adsabs/scix-mcp#readme",
   "engines": {
     "node": ">=18.0.0"
   },
