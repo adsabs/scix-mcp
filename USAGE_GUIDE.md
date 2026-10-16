@@ -153,7 +153,9 @@ as `prefix`.
 - Use markdown format unless you need to parse JSON
 
 **Rate Limits:**
-- 5000 requests/day per API token
+- Limits are per-endpoint, not a single account-wide daily cap
+- Check the `X-RateLimit-Limit` and `X-RateLimit-Remaining` response headers for the current
+  count; a 429 error reports whichever of those the response carries
 - Request higher limits at https://scixplorer.org/feedback/general
 
 **Error Handling:**
