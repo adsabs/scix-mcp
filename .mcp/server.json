@@ -4,10 +4,10 @@
   "title": "SciX MCP Server",
   "description": "Model Context Protocol server for SciX search, faceting, metrics, and library management.",
   "repository": {
-    "url": "https://github.com/thostetler/scix-mcp",
+    "url": "https://github.com/adsabs/scix-mcp",
     "source": "github"
   },
-  "websiteUrl": "https://github.com/thostetler/scix-mcp",
+  "websiteUrl": "https://github.com/adsabs/scix-mcp",
   "version": "1.0.15",
   "packages": [
     {
