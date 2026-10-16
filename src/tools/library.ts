@@ -28,6 +28,7 @@ import {
   SolrResponse
 } from '../types.js';
 import { libraryIdSegment, bibcodeSegment } from '../api-path.js';
+import { abstractUrl, libraryUrl } from '../scix-urls.js';
 
 export async function getLibraries(
   client: SciXAPIClient,
@@ -60,6 +61,7 @@ export async function getLibraries(
     output += `- **Owner**: ${lib.owner}\n`;
     output += `- **Permission**: ${lib.permission}\n`;
     output += `- **Public**: ${lib.public ? 'Yes' : 'No'}\n`;
+    output += `- **Link**: ${libraryUrl(lib.id, Boolean(lib.public))}\n`;
     output += `- **Collaborators**: ${lib.num_users}\n`;
     output += `- **Created**: ${lib.date_created}\n`;
     output += `- **Modified**: ${lib.date_last_modified}\n\n`;
@@ -91,6 +93,9 @@ export async function getLibrary(
   output += `- **Owner**: ${library.owner}\n`;
   output += `- **Permission**: ${library.permission}\n`;
   output += `- **Public**: ${library.public ? 'Yes' : 'No'}\n`;
+  if (library.id) {
+    output += `- **Link**: ${libraryUrl(library.id, Boolean(library.public))}\n`;
+  }
   output += `- **Collaborators**: ${library.num_users}\n`;
   output += `- **Created**: ${library.date_created}\n`;
   output += `- **Modified**: ${library.date_last_modified}\n\n`;
@@ -98,7 +103,7 @@ export async function getLibrary(
   output += `## Documents (${documents.length})\n\n`;
   if (documents.length > 0) {
     for (const bibcode of documents) {
-      output += `- ${bibcode}\n`;
+      output += `- ${bibcode} — ${abstractUrl(bibcode)}\n`;
     }
   } else {
     output += 'No documents in library.\n';
@@ -132,9 +137,14 @@ export async function createLibrary(
     return JSON.stringify(library, null, 2);
   }
 
+  const link = library.id
+    ? `**Link**: ${libraryUrl(library.id, Boolean(input.public))}\n`
+    : '';
+
   return `Library created successfully!\n\n` +
     `**Name**: ${library.name}\n` +
     `**ID**: ${library.id}\n` +
+    link +
     `**Documents**: ${library.num_documents}\n` +
     `**Created**: ${library.date_created}`;
 }

@@ -20,8 +20,8 @@ describe('config', () => {
   });
 
   describe('constants', () => {
-    it('targets the ADS v1 API base', () => {
-      expect(SCIX_API_BASE).toBe('https://api.adsabs.harvard.edu/v1');
+    it('targets the SciX v1 API base', () => {
+      expect(SCIX_API_BASE).toBe('https://api.scixplorer.org/v1');
     });
 
     it('caps rows at 100 and bibcodes at 2000', () => {

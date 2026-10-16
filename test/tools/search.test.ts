@@ -219,6 +219,65 @@ describe('Search Tool', () => {
       expect(parsed).toEqual({ numFound: 0, start: 0, docs: [] });
     });
 
+    it('sends each filter_query as its own repeated fq parameter', async () => {
+      const mockFetch = setupMockFetch({ body: { response: { numFound: 1, docs: [] } } });
+
+      await search(client, {
+        query: 'black hole',
+        filter_query: ['author_facet_hier:"0/Smith, J"', 'property:"refereed"'],
+        rows: 10,
+        start: 0,
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      const url = new URL(mockFetch.mock.calls[0][0] as string);
+      expect(url.searchParams.getAll('fq')).toEqual([
+        'author_facet_hier:"0/Smith, J"',
+        'property:"refereed"'
+      ]);
+    });
+
+    it('omits fq when filter_query is absent or empty', async () => {
+      const mockFetch = setupMockFetch({ body: { response: { numFound: 1, docs: [] } } });
+
+      await search(client, {
+        query: 'star',
+        rows: 10,
+        start: 0,
+        response_format: ResponseFormat.MARKDOWN
+      });
+      expect(new URL(mockFetch.mock.calls[0][0] as string).searchParams.has('fq')).toBe(false);
+
+      await search(client, {
+        query: 'star',
+        filter_query: [],
+        rows: 10,
+        start: 0,
+        response_format: ResponseFormat.MARKDOWN
+      });
+      expect(new URL(mockFetch.mock.calls[1][0] as string).searchParams.has('fq')).toBe(false);
+    });
+
+    it('links the equivalent SciX search, carrying the filters', async () => {
+      setupMockFetch({ body: { response: { numFound: 1, docs: [] } } });
+
+      const result = await search(client, {
+        query: 'black hole',
+        filter_query: ['property:"refereed"'],
+        rows: 10,
+        start: 0,
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      const link = /\[View on SciX\]\((?<url>[^)]+)\)/.exec(result)?.groups?.url;
+      expect(link).toBeDefined();
+      const url = new URL(link as string);
+      expect(url.origin + url.pathname).toBe('https://scixplorer.org/search');
+      expect(url.searchParams.get('q')).toBe('black hole');
+      expect(url.searchParams.getAll('fq')).toEqual(['property:"refereed"']);
+      expect(result).not.toContain('adsabs');
+    });
+
     it('should handle empty results', async () => {
       const mockResponse = {
         response: { numFound: 0, docs: [] }

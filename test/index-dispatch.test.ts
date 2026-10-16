@@ -13,6 +13,7 @@ const promptsDir = path.join(__dirname, '..', 'prompts');
 
 const EXPECTED_TOOL_NAMES = [
   'search',
+  'get_facets',
   'get_paper',
   'get_metrics',
   'get_citations',

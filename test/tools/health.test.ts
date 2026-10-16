@@ -141,7 +141,7 @@ describe('health_check tool', () => {
 
     expect(result).toContain('# SciX MCP Health Check');
     expect(result).toContain('scix-mcp v9.9.9');
-    expect(result).toContain('https://api.adsabs.harvard.edu/v1');
+    expect(result).toContain('https://api.scixplorer.org/v1');
     expect(result).toContain('**Auth probe:** ok');
     expect(result).toContain('`health_check`');
   });

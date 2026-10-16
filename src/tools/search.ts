@@ -1,11 +1,15 @@
-import { SciXAPIClient } from '../client.js';
+import { SciXAPIClient, repeated } from '../client.js';
 import { DEFAULT_FIELDS } from '../config.js';
 import { SearchInput, ResponseFormat, SolrResponse } from '../types.js';
 import { formatPapersListMarkdown } from '../formatters.js';
+import { searchUrl } from '../scix-urls.js';
 
 export async function search(client: SciXAPIClient, input: SearchInput): Promise<string> {
+  const filterQuery = input.filter_query ?? [];
+
   const params = {
     q: input.query,
+    fq: filterQuery.length > 0 ? repeated(filterQuery) : undefined,
     fl: DEFAULT_FIELDS,
     rows: input.rows,
     start: input.start,
@@ -24,6 +28,8 @@ export async function search(client: SciXAPIClient, input: SearchInput): Promise
   const hasMore = (input.start + input.rows) < numFound;
 
   let result = formatPapersListMarkdown(docs, numFound);
+
+  result += `\n[View on SciX](${searchUrl(input.query, filterQuery)})\n`;
 
   if (hasMore) {
     result += `\n*Use start=${input.start + input.rows} to see more results*\n`;

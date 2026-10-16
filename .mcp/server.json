@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
   "name": "scix-mcp",
-  "title": "NASA SciX MCP Server",
-  "description": "Model Context Protocol server for NASA ADS (SciX) search, metrics, and library management.",
+  "title": "SciX MCP Server",
+  "description": "Model Context Protocol server for SciX search, faceting, metrics, and library management.",
   "repository": {
     "url": "https://github.com/thostetler/scix-mcp",
     "source": "github"

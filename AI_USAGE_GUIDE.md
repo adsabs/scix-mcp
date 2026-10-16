@@ -1,6 +1,8 @@
-# NASA ADS MCP Server - AI Agent Guide
+# SciX MCP Server - AI Agent Guide
 
-This server provides access to the NASA Astrophysics Data System (ADS), enabling search and management of astronomical literature.
+This server provides access to SciX, enabling search and management of astronomical literature.
+
+**Link policy**: when citing or linking a record, always use `https://scixplorer.org/abs/<bibcode>/abstract`. Tool output already contains these links — use them verbatim and never rewrite them to an ADS host.
 
 ## Core Concepts
 
@@ -34,6 +36,36 @@ citations(bibcode:X)      # Papers citing X
 ```
 
 **Boolean operators:** `AND`, `OR`, `NOT` (must be uppercase)
+
+**filter_query** - narrow results without touching the query
+
+`search` accepts `filter_query`, a list of Solr `fq` strings ANDed together,
+e.g. `['property:"refereed"', 'database:"astronomy"']`. Prefer this over
+folding constraints into `query` when the constraint came from a facet.
+
+**get_facets** - see how a result set breaks down, then filter on it
+
+- Takes the same `query` and `filter_query` as `search`, plus `facets`
+- Returns buckets with counts and a ready-made `filter` string per bucket
+- Available facets: `author`, `collections`, `refereed`, `institutions`,
+  `keywords`, `publications`, `bibgroups`, `simbad`, `ned`, `award`, `data`,
+  `vizier`, `pubtype`, `planetary`, `uat`, `year`
+- Hierarchical facets (`author`, `institutions`, `simbad`, `ned`, `award`,
+  `pubtype`, `planetary`) return level-prefixed values like `0/Smith, J`.
+  Pass a bucket's `child_prefix` back as `prefix` to drill in — valid only
+  when requesting a single facet.
+
+**Facet-then-filter workflow:**
+
+```
+1. get_facets(query: "exoplanet atmospheres", facets: ["author", "year"])
+2. read the bucket you want, e.g. filter: author_facet_hier:"0/Smith, J"
+3. search(query: "exoplanet atmospheres",
+          filter_query: ['author_facet_hier:"0/Smith, J"'])
+```
+
+Use `get_facets` instead of guessing at constraints or paging through
+hundreds of results to work out the shape of a result set.
 
 **Sorting options:**
 
@@ -144,7 +176,7 @@ citations(bibcode:X)      # Papers citing X
 
 **Sharing links**
 
-- Public libraries should be shared using `https://scixplorer.org/public-libraries/<library_id>` rather than ADS UI URLs.
+- Public libraries should be shared using `https://scixplorer.org/public-libraries/<library_id>`; private ones live at `https://scixplorer.org/user/libraries/<library_id>`. Never link to an ADS UI host.
 ### 7. Annotations
 
 **get_annotation** - Retrieve note for paper in library
@@ -169,7 +201,7 @@ citations(bibcode:X)      # Papers citing X
 3. **Combine operators strategically**: `(dark energy OR dark matter) AND year:2020-2023`
 4. **Check numFound**: Adjust query if results too many/few
 5. **Scale with cursormark**: For large result sets, use Solr `cursormark` pagination (`cursormark=*`, stable `sort`, loop until `nextCursorMark` repeats) instead of `start` offsets
-6. **Batch many queries**: If you already have a text file full of queries, run them through the ADS BigQuery endpoint to avoid thousands of individual `search` calls
+6. **Batch many queries**: If you already have a text file full of queries, run them through the SciX BigQuery endpoint to avoid thousands of individual `search` calls
 
 ### Efficient Workflows
 
@@ -250,7 +282,7 @@ Sort: date desc
 
 ## Limitations
 
-- **Rate limit**: 5000 requests/day (contact adshelp@cfa.harvard.edu for higher limits)
+- **Rate limit**: 5000 requests/day (request higher limits at https://scixplorer.org/feedback/general)
 - **Bibcode limits**: Max 2000 bibcodes per request for metrics/export/library operations
 - **Search results**: Max 100 rows per search request
 - **Annotation length**: Max 10000 characters

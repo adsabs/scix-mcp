@@ -15,6 +15,7 @@ import {
 } from './config.js';
 import { isDirectRun } from './is-direct-run.js';
 import { search } from './tools/search.js';
+import { getFacets } from './tools/facets.js';
 import { getPaper } from './tools/paper.js';
 import { getMetrics } from './tools/metrics.js';
 import { getCitations, getReferences } from './tools/citations.js';
@@ -40,6 +41,7 @@ import {
 } from './tools/library.js';
 import {
   SearchInputSchema,
+  GetFacetsInputSchema,
   GetPaperInputSchema,
   MetricsInputSchema,
   CitationsInputSchema,
@@ -123,7 +125,7 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   server.registerTool(
     track('search'),
     {
-      description: 'Search SciX for astronomical literature. Supports full Solr query syntax including author:"Last, F.", title:keyword, abstract:keyword, year:2020-2023, and Boolean operators (AND, OR, NOT).',
+      description: 'Search SciX for astronomical literature. Supports full Solr query syntax including author:"Last, F.", title:keyword, abstract:keyword, year:2020-2023, and Boolean operators (AND, OR, NOT). Pass filter_query to narrow results by facet values obtained from get_facets.',
       inputSchema: SearchInputSchema,
       annotations: {
         readOnlyHint: true,
@@ -136,6 +138,29 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
       try {
         const client = getClient();
         const result = await search(client, input);
+        return textResult(result);
+      } catch (error) {
+        return errorResult(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    track('get_facets'),
+    {
+      description: 'Count how SciX search results break down across facets, to narrow a search. Covers author, collections, refereed, institutions, keywords, publications, bibgroups, SIMBAD objects, NED objects, award, data, Vizier tables, publication type, planetary features, UAT concepts, and year. Each returned bucket carries a ready-to-use filter_query value to pass back to search, and hierarchical facets (author, institutions, objects, award, publication type, planetary) report a child_prefix for drilling deeper.',
+      inputSchema: GetFacetsInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async (input) => {
+      try {
+        const client = getClient();
+        const result = await getFacets(client, input);
         return textResult(result);
       } catch (error) {
         return errorResult(error);

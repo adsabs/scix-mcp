@@ -387,4 +387,21 @@ describe('HTTP transport', () => {
     const seen = mockAds.requests.map((request: RecordedRequest) => request.headers.authorization);
     expect(seen).toEqual(['Bearer token-a', 'Bearer token-b']);
   });
+
+  it('tags upstream requests with the client source over the HTTP transport', async () => {
+    await post(
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'get_facets', arguments: { query: 'star', facets: ['author'] } }
+      },
+      authed('token-a')
+    );
+
+    const upstream = mockAds.requests.at(-1) as RecordedRequest;
+    expect(upstream.pathname).toBe('/search/query');
+    expect(upstream.headers['x-client-source']).toBe('scix-mcp');
+    expect(upstream.headers['user-agent']).toContain('transport=http');
+  });
 });

@@ -6,6 +6,7 @@ interface MockRoute {
   pattern: RegExp;
   status?: number;
   body?: unknown;
+  resolve?: (url: URL) => unknown;
 }
 
 const SOLR_RESPONSE = {
@@ -56,9 +57,28 @@ const LIBRARY_METADATA = {
   num_users: 1
 };
 
+function resolveSearch(url: URL): unknown {
+  const requested = url.searchParams.get('json.facet');
+  if (!requested) {
+    return SOLR_RESPONSE;
+  }
+
+  const fields = Object.keys(JSON.parse(requested) as Record<string, unknown>);
+  const facets: Record<string, unknown> = { count: 1 };
+  for (const field of fields) {
+    const hierarchical = field.endsWith('_hier') || field.endsWith('_hier_3level');
+    facets[field] = {
+      numBuckets: 9,
+      buckets: [{ val: hierarchical ? '0/Tester, A' : 'smoke-value', count: 42 }]
+    };
+  }
+
+  return { response: { numFound: 1, docs: [] }, facets };
+}
+
 // Ordered most-specific first; first match wins.
 const ROUTES: MockRoute[] = [
-  { method: 'GET', pattern: /^\/search\/query$/, body: SOLR_RESPONSE },
+  { method: 'GET', pattern: /^\/search\/query$/, resolve: resolveSearch },
   { method: 'POST', pattern: /^\/metrics$/, body: METRICS_RESPONSE },
   { method: 'POST', pattern: /^\/export\/[^/]+$/, body: { export: '@ARTICLE{smoke2024, title="Smoke Test Paper Alpha"}' } },
 
@@ -136,7 +156,10 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
       query: url.search,
       headers: {
         authorization: req.headers.authorization,
-        'user-agent': req.headers['user-agent']
+        'user-agent': req.headers['user-agent'],
+        'x-client-source': Array.isArray(req.headers['x-client-source'])
+          ? req.headers['x-client-source'].join(',')
+          : req.headers['x-client-source']
       }
     };
     requests.push(recorded);
@@ -157,8 +180,9 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
       if (res.writableEnded || res.destroyed) {
         return;
       }
+      const body = route.resolve ? route.resolve(url) : route.body;
       res.writeHead(route.status ?? 200, { 'Content-Type': 'application/json' });
-      res.end(route.body === undefined ? '' : JSON.stringify(route.body));
+      res.end(body === undefined ? '' : JSON.stringify(body));
     };
 
     if (delayMs > 0) {

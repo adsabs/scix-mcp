@@ -20,6 +20,7 @@ const serverEntry = path.join(repoRoot, 'build', 'index.js');
 // Kept as a literal so any addition/removal in src/index.ts fails loudly.
 const EXPECTED_TOOLS = [
   'search',
+  'get_facets',
   'get_paper',
   'get_metrics',
   'get_citations',
@@ -61,6 +62,7 @@ interface ToolCase {
 
 const TOOL_CASES: ToolCase[] = [
   { name: 'search', args: { query: 'star' }, marker: 'Smoke Test Paper Alpha' },
+  { name: 'get_facets', args: { query: 'star', facets: ['author'] }, marker: '# Facets for `star`' },
   { name: 'get_paper', args: { bibcode: '2024SmokeT..42A' }, marker: '# Smoke Test Paper Alpha' },
   { name: 'get_metrics', args: { bibcodes: ['2024SmokeT..42A'] }, marker: 'Citation Metrics' },
   { name: 'get_citations', args: { bibcode: '2024SmokeT..42A' }, marker: 'Papers citing 2024SmokeT..42A' },

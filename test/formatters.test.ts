@@ -219,6 +219,21 @@ describe('formatters', () => {
       expect(md).toContain('Found 0 total papers, showing 0');
       expect(md).not.toContain('1. **');
     });
+
+    it('links each paper to its SciX abstract page', () => {
+      const md = formatPapersListMarkdown([{ bibcode: '2024ApJ...123..456A' }], 1);
+      expect(md).toContain('- SciX: https://scixplorer.org/abs/2024ApJ...123..456A/abstract');
+      expect(md).not.toContain('adsabs');
+    });
+  });
+
+  describe('SciX linking', () => {
+    it('gives the detail view a SciX abstract link rather than an ADS one', () => {
+      const md = formatPaperMarkdown({ bibcode: '2024ApJ...123..456A' });
+      expect(md).toContain('**SciX:** https://scixplorer.org/abs/2024ApJ...123..456A/abstract');
+      expect(md).not.toContain('adsabs');
+      expect(md).not.toContain('ui.adsabs');
+    });
   });
 
   describe('formatMetricsMarkdown', () => {

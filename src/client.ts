@@ -4,10 +4,20 @@ import {
   REQUEST_TIMEOUT,
   RATE_LIMIT,
   buildUserAgent,
+  CLIENT_SOURCE,
+  CLIENT_SOURCE_HEADER,
   TransportKind
 } from './config.js';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+
+export class RepeatedParam {
+  constructor(readonly values: readonly string[]) {}
+}
+
+export function repeated(values: readonly string[]): RepeatedParam {
+  return new RepeatedParam(values);
+}
 
 interface RequestOptions {
   params?: Record<string, unknown>;
@@ -136,7 +146,11 @@ export class SciXAPIClient {
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined && value !== null) {
-          if (Array.isArray(value)) {
+          if (value instanceof RepeatedParam) {
+            for (const entry of value.values) {
+              url.searchParams.append(key, entry);
+            }
+          } else if (Array.isArray(value)) {
             url.searchParams.append(key, value.join(','));
           } else {
             url.searchParams.append(key, String(value));
@@ -158,7 +172,8 @@ export class SciXAPIClient {
 
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${this.apiKey}`,
-      'User-Agent': this.userAgent
+      'User-Agent': this.userAgent,
+      [CLIENT_SOURCE_HEADER]: CLIENT_SOURCE
     };
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
