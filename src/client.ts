@@ -39,6 +39,48 @@ function formatRateLimitReset(resetHeader: string | null): string | undefined {
   return date.toISOString();
 }
 
+interface RateLimitHeaders {
+  limit: string | null;
+  remaining: string | null;
+  reset: string | null;
+}
+
+function parseRateLimitCount(header: string | null): number | undefined {
+  const trimmed = header?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const count = Number(trimmed);
+  if (!Number.isInteger(count) || count < 0) {
+    return undefined;
+  }
+  return count;
+}
+
+function describeRateLimit(headers: RateLimitHeaders): string {
+  const limit = parseRateLimitCount(headers.limit);
+  const remaining = parseRateLimitCount(headers.remaining);
+
+  if (limit !== undefined && remaining !== undefined) {
+    return `This endpoint's limit is ${limit} requests, ${remaining} remaining.`;
+  }
+  if (limit !== undefined) {
+    return `This endpoint's limit is ${limit} requests.`;
+  }
+  if (remaining !== undefined) {
+    return `${remaining} remaining on this endpoint's limit.`;
+  }
+  return 'Limits vary by endpoint; this response did not report a usable limit.';
+}
+
+function describeRetryHint(method: HttpMethod): string {
+  if (method === 'GET') {
+    return 'This is usually transient; retrying may help.';
+  }
+  return 'This is usually transient; retrying may help, but if this request modifies ' +
+    'data, check whether it was applied first.';
+}
+
 interface AbortState {
   signal: AbortSignal;
   // Any AbortError not caused by the caller is attributed to the timeout.
@@ -168,6 +210,7 @@ export class SciXAPIClient {
     { params, body }: RequestOptions
   ): Promise<T> {
     const url = this.buildUrl(endpoint, params);
+    const serializedBody = body !== undefined ? JSON.stringify(body) : undefined;
     const abort = linkAbort(this.signal, REQUEST_TIMEOUT);
 
     const headers: Record<string, string> = {
@@ -179,42 +222,80 @@ export class SciXAPIClient {
       headers['Content-Type'] = 'application/json';
     }
 
-    try {
-      const response = await fetch(url, {
-        method,
-        headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: abort.signal
-      });
+    const init: RequestInit = {
+      method,
+      headers,
+      body: serializedBody,
+      signal: abort.signal
+    };
 
+    try {
+      const text = await this.fetchResponseText(method, endpoint, url, init, abort);
+      return this.parseResponseBody<T>(method, endpoint, text);
+    } finally {
+      abort.dispose();
+    }
+  }
+
+  private async fetchResponseText(
+    method: HttpMethod,
+    endpoint: string,
+    url: string,
+    init: RequestInit,
+    abort: AbortState
+  ): Promise<string> {
+    try {
+      const response = await fetch(url, init);
       const text = await response.text();
 
       if (!response.ok) {
         const parsedErrorBody = this.safeParseJson(text);
-        const rateLimitReset = response.headers?.get(RATE_LIMIT.HEADERS.RESET) ?? null;
+        const rateLimit: RateLimitHeaders = {
+          limit: response.headers?.get(RATE_LIMIT.HEADERS.LIMIT) ?? null,
+          remaining: response.headers?.get(RATE_LIMIT.HEADERS.REMAINING) ?? null,
+          reset: response.headers?.get(RATE_LIMIT.HEADERS.RESET) ?? null
+        };
         throw this.buildError(
           response.status,
           response.statusText,
           method,
           endpoint,
           parsedErrorBody,
-          rateLimitReset
+          rateLimit
         );
       }
 
-      const trimmed = text.trim();
-      // ADS responses are not runtime-validated; T is trusted at this boundary.
-      const parsed: unknown = trimmed ? JSON.parse(trimmed) : {};
-      return parsed as T;
+      return text;
     } catch (error: unknown) {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(abortMessage(abort.cancelledByCaller()));
       }
-      throw error;
-    } finally {
-      // Not disposed right after fetch(): the signal has to stay armed through
-      // the body read, which is where a large export actually spends its time.
-      abort.dispose();
+      if (error instanceof SciXAPIError) {
+        throw error;
+      }
+      const original = error instanceof Error ? error : new Error(String(error));
+      throw new Error(
+        `SciX API request failed for ${method} ${endpoint} at ${this.baseURL}: ` +
+          `${original.message}`,
+        { cause: original }
+      );
+    }
+  }
+
+  private parseResponseBody<T>(method: HttpMethod, endpoint: string, text: string): T {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return {} as T;
+    }
+    try {
+      return JSON.parse(trimmed) as T;
+    } catch (error: unknown) {
+      const original = error instanceof Error ? error : new Error(String(error));
+      throw new Error(
+        `SciX API returned a malformed response body for ${method} ${endpoint}: ` +
+          `${original.message}`,
+        { cause: original }
+      );
     }
   }
 
@@ -235,7 +316,7 @@ export class SciXAPIClient {
     method: HttpMethod,
     endpoint: string,
     body: unknown,
-    rateLimitReset: string | null = null
+    rateLimit: RateLimitHeaders
   ): SciXAPIError {
     const context = `for ${method} ${endpoint}`;
     const adsMessage = extractAdsErrorMessage(body);
@@ -244,14 +325,21 @@ export class SciXAPIClient {
     if (status === 401) {
       message = `Authentication failed ${context}. The SciX API token was missing or rejected. ` +
         `Get your key from https://scixplorer.org/user/settings/token`;
+    } else if (status === 403) {
+      message = `Permission denied ${context}. Re-authenticating will not help: the token ` +
+        `either lacks access to this resource or the request was blocked upstream.`;
     } else if (status === 404) {
       message = `Resource not found ${context}.`;
     } else if (status === 429) {
-      message = `Rate limit exceeded (5000 requests/day) ${context}. Please try again later.`;
-      const resetTime = formatRateLimitReset(rateLimitReset);
+      message = `Rate limit exceeded ${context}. ${describeRateLimit(rateLimit)} ` +
+        `Please try again later.`;
+      const resetTime = formatRateLimitReset(rateLimit.reset);
       if (resetTime) {
         message += ` Retry after ${resetTime}.`;
       }
+    } else if (status >= 500) {
+      message = `SciX API temporarily unavailable (${status} ${statusText}) ${context}. ` +
+        describeRetryHint(method);
     } else {
       message = `SciX API error: ${status} ${statusText} ${context}`;
     }

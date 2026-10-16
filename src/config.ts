@@ -80,7 +80,6 @@ export const DEFAULT_FIELDS = [
 ];
 
 export const RATE_LIMIT = {
-  REQUESTS_PER_DAY: 5000,
   HEADERS: {
     LIMIT: 'X-RateLimit-Limit',
     REMAINING: 'X-RateLimit-Remaining',
