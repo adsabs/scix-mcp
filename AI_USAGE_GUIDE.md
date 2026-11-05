@@ -154,9 +154,13 @@ hundreds of results to work out the shape of a result set.
 
 - `union`: Combine libraries (OR)
 - `intersection`: Common papers (AND)
-- `difference`: Papers in target not in sources
-- `copy`: Duplicate library with new name
+- `difference`: Papers in the primary library not in the others
+- `copy`: Copy documents into the library named in `source_library_ids`
 - `empty`: Remove all documents (keep library)
+
+`union`, `intersection`, and `difference` create a new library; `name`,
+`description`, and `public` apply only to those three. The response reports
+the new library's `id`.
 
 ### 6. Permissions & Sharing
 

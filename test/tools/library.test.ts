@@ -393,9 +393,15 @@ describe('Library Tools', () => {
   });
 
   describe('addDocumentsByQuery', () => {
-    it('should add documents by query', async () => {
-      const mockResponse = { number_added: 15 };
-      const mockFetch = setupMockFetch({ body: mockResponse });
+    it('searches then adds the resulting bibcodes', async () => {
+      const searchResponse = {
+        response: { docs: [{ bibcode: 'bib1' }, { bibcode: 'bib2' }] }
+      };
+
+      const mockFetch = setupMockFetchSequence([
+        { body: searchResponse },
+        { body: { number_added: 2 } }
+      ]);
 
       const result = await addDocumentsByQuery(client, {
         library_id: 'lib1',
@@ -404,77 +410,43 @@ describe('Library Tools', () => {
         response_format: ResponseFormat.MARKDOWN
       });
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toContain('biblib/documents/lib1/query');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
 
-      const body = JSON.parse(init.body);
-      expect(body.query).toBe('author:"Einstein"');
-      expect(body.rows).toBe(20);
+      const [searchUrl] = mockFetch.mock.calls[0];
+      expect(searchUrl).toContain('search/query');
+      expect(searchUrl).toContain('rows=20');
+
+      const [addUrl, addInit] = mockFetch.mock.calls[1];
+      expect(addUrl).toContain('biblib/documents/lib1');
+      expect(addInit.method).toBe('POST');
+
+      const body = JSON.parse(addInit.body);
+      expect(body.bibcode).toEqual(['bib1', 'bib2']);
+      expect(body.action).toBe('add');
 
       expect(result).toContain('Documents added to library');
-      expect(result).toContain('15');
-    });
-
-    it('should fall back to search when query endpoint returns 404', async () => {
-      const searchResponse = {
-        response: { docs: [{ bibcode: 'bib1' }, { bibcode: 'bib2' }] }
-      };
-      const addResponse = { number_added: 2 };
-
-      const mockFetch = vi.fn()
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 404,
-          statusText: 'Not Found',
-          json: async () => ({}),
-          text: async () => ''
-        } as any)
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => searchResponse,
-          text: async () => JSON.stringify(searchResponse)
-        } as any)
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => addResponse,
-          text: async () => JSON.stringify(addResponse)
-        } as any);
-
-      global.fetch = mockFetch as any;
-
-      const result = await addDocumentsByQuery(client, {
-        library_id: 'lib1',
-        query: 'black hole',
-        rows: 2,
-        response_format: ResponseFormat.MARKDOWN
-      });
-
-      expect(mockFetch).toHaveBeenCalledTimes(3);
-      expect(mockFetch.mock.calls[0][0]).toContain('biblib/documents/lib1/query');
-      expect(mockFetch.mock.calls[1][0]).toContain('search/query');
-      expect(mockFetch.mock.calls[2][0]).toContain('biblib/documents/lib1');
-      expect(result).toContain('Documents added');
       expect(result).toContain('2');
     });
 
-    it('should not fall back when a non-404 error message merely contains "not found"', async () => {
-      // The fallback is status-driven: a 500 saying "not found" must not
-      // trigger it, only a genuine 404 should.
-      const mockFetch = vi.fn().mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-        headers: new Map(),
-        json: async () => ({ error: 'query endpoint not found in upstream' }),
-        text: async () => JSON.stringify({ error: 'query endpoint not found in upstream' })
-      } as any);
+    it('never calls the biblib query endpoint', async () => {
+      const mockFetch = setupMockFetchSequence([
+        { body: { response: { docs: [{ bibcode: 'bib1' }] } } },
+        { body: { number_added: 1 } }
+      ]);
 
-      global.fetch = mockFetch as any;
+      await addDocumentsByQuery(client, {
+        library_id: 'lib1',
+        query: 'black hole',
+        rows: 1,
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes('/query') && url.includes('biblib'))).toBe(false);
+    });
+
+    it('propagates a search failure instead of reporting success', async () => {
+      setupMockFetch({ status: 500, body: { error: 'boom' } });
 
       await expect(
         addDocumentsByQuery(client, {
@@ -484,31 +456,10 @@ describe('Library Tools', () => {
           response_format: ResponseFormat.MARKDOWN
         })
       ).rejects.toThrow();
-
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(mockFetch.mock.calls[0][0]).toContain('biblib/documents/lib1/query');
     });
 
     it('should respond gracefully when search finds no documents', async () => {
-      const searchResponse = { response: { docs: [] } };
-
-      const mockFetch = vi.fn()
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 404,
-          statusText: 'Not Found',
-          json: async () => ({}),
-          text: async () => ''
-        } as any)
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => searchResponse,
-          text: async () => JSON.stringify(searchResponse)
-        } as any);
-
-      global.fetch = mockFetch as any;
+      const mockFetch = setupMockFetch({ body: { response: { docs: [] } } });
 
       const result = await addDocumentsByQuery(client, {
         library_id: 'lib1',
@@ -518,19 +469,22 @@ describe('Library Tools', () => {
       });
 
       expect(result).toContain("No documents found for query 'noresults'");
-      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('libraryOperation', () => {
     it('should perform union operation', async () => {
-      const mockResponse = { library_id: 'newlib', number_added: 25 };
+      const mockResponse = { id: 'newlib', name: 'Merged', description: '' };
       const mockFetch = setupMockFetch({ body: mockResponse });
 
       const result = await libraryOperation(client, {
         library_id: 'lib1',
         operation: LibraryOperation.UNION,
         source_library_ids: ['lib2', 'lib3'],
+        name: 'Merged',
+        description: 'Union of two libraries',
+        public: true,
         response_format: ResponseFormat.MARKDOWN
       });
 
@@ -540,18 +494,34 @@ describe('Library Tools', () => {
       const body = JSON.parse(init.body);
       expect(body.action).toBe('union');
       expect(body.libraries).toEqual(['lib2', 'lib3']);
+      expect(body.name).toBe('Merged');
+      expect(body.description).toBe('Union of two libraries');
+      expect(body.public).toBe(true);
 
       expect(result).toContain('union');
       expect(result).toContain('newlib');
     });
 
-    it('should perform copy operation with name and description', async () => {
-      const mockResponse = { library_id: 'copied-lib' };
-      const mockFetch = setupMockFetch({ body: mockResponse });
+    it('reports the new library id from the response id field', async () => {
+      setupMockFetch({ body: { id: 'newlib', name: 'Merged' } });
+
+      const result = await libraryOperation(client, {
+        library_id: 'lib1',
+        operation: LibraryOperation.INTERSECTION,
+        source_library_ids: ['lib2'],
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      expect(result).toContain('**New Library ID**: newlib');
+    });
+
+    it('omits name and description for copy, which biblib ignores', async () => {
+      const mockFetch = setupMockFetch({ body: { id: 'copied-lib' } });
 
       await libraryOperation(client, {
         library_id: 'lib1',
         operation: LibraryOperation.COPY,
+        source_library_ids: ['lib2'],
         name: 'Copy of Library',
         description: 'Copied library',
         response_format: ResponseFormat.MARKDOWN
@@ -560,8 +530,9 @@ describe('Library Tools', () => {
       const [, init] = mockFetch.mock.calls[0];
       const body = JSON.parse(init.body);
       expect(body.action).toBe('copy');
-      expect(body.name).toBe('Copy of Library');
-      expect(body.description).toBe('Copied library');
+      expect(body.libraries).toEqual(['lib2']);
+      expect(body.name).toBeUndefined();
+      expect(body.description).toBeUndefined();
     });
 
     it('should perform empty operation', async () => {

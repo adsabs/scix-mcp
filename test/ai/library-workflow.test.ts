@@ -137,6 +137,33 @@ describe.skipIf(!isAgentHarnessEnabled())('SciX MCP agent evals', () => {
     expect(mock.grantedPermission('smokeLibId', 'collab@example.com')).toBeUndefined();
   });
 
+  it('names the library a union operation creates', async () => {
+    mock.reset();
+
+    const run = await runAgent({
+      apiBase: mock.url,
+      prompt:
+        'Using the SciX tools, merge library smokeLibId with library ' +
+        'deletableLibId into a new library called "Merged Reading List", then ' +
+        'tell me the new library id.'
+    });
+
+    report('union-operation', run);
+
+    expect(run.isError).toBe(false);
+    expect(run.failedToolCalls).toEqual([]);
+    expect(run.toolNames).toContain('library_operation');
+
+    const operation = [...mock.requests]
+      .reverse()
+      .find((request) => request.pathname.startsWith('/biblib/libraries/operations/'));
+    expect(operation).toBeDefined();
+
+    const body = (operation?.body ?? {}) as Record<string, unknown>;
+    expect(body.name).toBe('Merged Reading List');
+    expect(run.finalText).not.toContain('undefined');
+  });
+
   it('adds query results to an existing library without creating a new one', async () => {
     mock.reset();
 

@@ -188,11 +188,24 @@ export const AddDocumentsByQueryInputSchema = z.object({
 });
 
 export const LibraryOperationInputSchema = z.object({
-  library_id: z.string().min(1).describe('Target library identifier'),
+  library_id: z.string().min(1).describe('Primary library identifier'),
   operation: z.enum(LibraryOperation).describe('Operation to perform'),
-  source_library_ids: z.array(z.string()).optional().describe('Source library IDs for union/intersection/difference'),
-  name: z.string().optional().describe('Name for new library (for copy operation)'),
-  description: z.string().optional().describe('Description for new library (for copy operation)'),
+  source_library_ids: z
+    .array(z.string())
+    .optional()
+    .describe('Other libraries involved: the operands for union/intersection/difference, or the destination for copy'),
+  name: z
+    .string()
+    .optional()
+    .describe('Name for the library created by union/intersection/difference'),
+  description: z
+    .string()
+    .optional()
+    .describe('Description for the library created by union/intersection/difference'),
+  public: z
+    .boolean()
+    .optional()
+    .describe('Visibility of the library created by union/intersection/difference'),
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
@@ -367,8 +380,9 @@ export interface DocumentUpdateResponse {
 }
 
 export interface LibraryOperationResponse {
-  library_id?: string;
-  number_added?: number;
+  id?: string;
+  name?: string;
+  description?: string;
 }
 
 export type PermissionsResponse = Record<string, string[]>[];

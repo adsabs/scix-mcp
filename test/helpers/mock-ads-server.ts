@@ -380,7 +380,26 @@ function createRoutes(
     {
       method: 'POST',
       pattern: /^\/biblib\/libraries\/operations\/[^/]+$/,
-      body: { library_id: 'opResultId', number_added: 5 }
+      resolve: ({ url, body }) => {
+        const fields = (body ?? {}) as Record<string, unknown>;
+
+        if (fields.action === 'empty') {
+          const library = libraries.get(libraryIdFrom(url));
+          if (library) {
+            library.documents = [];
+          }
+          return { body: {} };
+        }
+
+        const created = libraries.create({
+          name: fields.name ?? 'Operation Result',
+          description: fields.description,
+          public: fields.public
+        });
+        return {
+          body: { name: created.name, id: created.id, description: created.description }
+        };
+      }
     },
     {
       method: 'GET',

@@ -237,29 +237,6 @@ export async function addDocumentsByQuery(
   client: SciXAPIClient,
   input: AddDocumentsByQueryInput
 ): Promise<string> {
-  const payload = { query: input.query, rows: input.rows };
-
-  try {
-    const data = await client.post<DocumentUpdateResponse>(
-      `biblib/documents/${libraryIdSegment(input.library_id)}/query`,
-      payload
-    );
-
-    if (input.response_format === ResponseFormat.JSON) {
-      return JSON.stringify(data, null, 2);
-    }
-
-    return `Documents added to library from query.\n\n` +
-      `**Query**: ${input.query}\n` +
-      `**Documents added**: ${data.number_added || 0}`;
-  } catch (error: unknown) {
-    const isNotFound = error instanceof SciXAPIError && error.status === 404;
-
-    if (!isNotFound) {
-      throw error;
-    }
-  }
-
   const searchData = await client.get<SolrResponse>('search/query', {
     q: input.query,
     rows: input.rows,
@@ -299,11 +276,17 @@ export async function addDocumentsByQuery(
     }, null, 2);
   }
 
-  return `Documents added to library from query (search fallback).\n\n` +
+  return `Documents added to library from query.\n\n` +
     `**Query**: ${input.query}\n` +
     `**Results found**: ${bibcodes.length}\n` +
     `**Documents added**: ${added}`;
 }
+
+const CREATES_NEW_LIBRARY: LibraryOperation[] = [
+  LibraryOperation.UNION,
+  LibraryOperation.INTERSECTION,
+  LibraryOperation.DIFFERENCE
+];
 
 export async function libraryOperation(
   client: SciXAPIClient,
@@ -317,9 +300,10 @@ export async function libraryOperation(
     payload.libraries = input.source_library_ids;
   }
 
-  if (input.operation === LibraryOperation.COPY) {
+  if (CREATES_NEW_LIBRARY.includes(input.operation)) {
     if (input.name) payload.name = input.name;
     if (input.description) payload.description = input.description;
+    if (input.public !== undefined) payload.public = input.public;
   }
 
   const data = await client.post<LibraryOperationResponse>(
@@ -333,11 +317,12 @@ export async function libraryOperation(
 
   let output = `Library operation '${input.operation}' completed successfully.\n\n`;
 
-  if (data.library_id) {
-    output += `**New Library ID**: ${data.library_id}\n`;
+  if (data.name) {
+    output += `**Name**: ${data.name}\n`;
   }
-  if (data.number_added !== undefined) {
-    output += `**Documents affected**: ${data.number_added}\n`;
+  if (data.id) {
+    output += `**New Library ID**: ${data.id}\n`;
+    output += `**Link**: ${libraryUrl(data.id, input.public === true)}\n`;
   }
 
   return output;

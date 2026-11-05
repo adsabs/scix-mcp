@@ -149,7 +149,7 @@ cannot use this endpoint.
 - `edit_library`: Update `name`, `description`, or `public` for `library_id`; optional `response_format`.
 - `manage_documents`: Add/remove documents with `library_id`, `bibcodes` (1-2000), `action` (`add` | `remove`), and optional `response_format`.
 - `add_documents_by_query`: Add search results to a library with `library_id`, `query`, optional `rows` (1-2000, default 25), and `response_format`.
-- `library_operation`: Run set ops on a library with `library_id`, `operation` (`union` | `intersection` | `difference` | `copy` | `empty`), optional `source_library_ids`, `name`/`description` (for copy), and `response_format`.
+- `library_operation`: Run set ops on a library with `library_id`, `operation` (`union` | `intersection` | `difference` | `copy` | `empty`), optional `source_library_ids`, `name`/`description`/`public` (only for `union`/`intersection`/`difference`, which create a new library), and `response_format`. For `copy`, `source_library_ids` holds the destination library; `empty` uses none of these.
 
 ### Permissions & Sharing
 

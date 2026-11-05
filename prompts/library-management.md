@@ -69,18 +69,23 @@ Perfect for "add all papers by author X" scenarios.
 
 ```
 library_operation(
-  library_id="target_id",
+  library_id="first_id",
   operation="union",
-  source_library_ids=["lib1", "lib2"]
+  source_library_ids=["lib2", "lib3"],
+  name="Merged Library",
+  description="Union of three reading lists"
 )
 ```
 
 Available operations:
 - `union` - Combine libraries (OR)
 - `intersection` - Common papers (AND)
-- `difference` - Papers in target not in sources
-- `copy` - Duplicate with new name
+- `difference` - Papers in the primary library not in the others
+- `copy` - Copy documents into the library named in `source_library_ids`
 - `empty` - Remove all documents (keep library)
+
+`name`, `description`, and `public` apply only to `union`, `intersection`,
+and `difference`, which create a new library.
 
 ## Annotations
 

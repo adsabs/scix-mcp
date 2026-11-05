@@ -227,6 +227,35 @@ describe('MCP protocol smoke suite (stdio against build/index.js)', () => {
     ).toBe(false);
   });
 
+  it('reports the library a union operation creates', async () => {
+    const result = (await client.callTool({
+      name: 'library_operation',
+      arguments: {
+        library_id: 'smokeLibId',
+        operation: 'union',
+        source_library_ids: ['deletableLibId'],
+        name: 'Union Result',
+        description: 'Merged for the smoke suite',
+        public: true
+      }
+    })) as CallToolResult;
+
+    expect(result.isError ?? false).toBe(false);
+
+    const text = firstText(result);
+    expect(text).toContain('**Name**: Union Result');
+    expect(text).toMatch(/\*\*New Library ID\*\*: \w+/);
+    expect(text).not.toContain('undefined');
+
+    const operation = [...mock.requests]
+      .reverse()
+      .find((request) => request.pathname === '/biblib/libraries/operations/smokeLibId');
+    const body = operation?.body as Record<string, unknown>;
+    expect(body.name).toBe('Union Result');
+    expect(body.public).toBe(true);
+    expect(body.libraries).toEqual(['deletableLibId']);
+  });
+
   it('grants and revokes a collaborator through the flag map', async () => {
     const email = 'newcollab@example.com';
 
