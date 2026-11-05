@@ -169,8 +169,8 @@ cannot use this endpoint.
 
 ## Rate Limits
 
-- **5000 requests per day** per API key
-- Rate limit info is returned in response headers
+- Limits are per-endpoint, not a single account-wide daily cap
+- The `X-RateLimit-Limit` and `X-RateLimit-Remaining` response headers are authoritative; a 429 error reports whichever of them the response includes
 - Request higher limits at https://scixplorer.org/feedback/general
 
 ## SciX Search Syntax

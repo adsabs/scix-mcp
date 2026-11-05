@@ -230,7 +230,8 @@ hundreds of results to work out the shape of a result set.
 - **No results**: Try broader terms, remove filters, check spelling
 - **Too many results**: Add field-specific filters, use Boolean operators
 - **Invalid bibcode**: Use `search` to find correct bibcode first
-- **Rate limits**: 5000 requests/day per API key
+- **Rate limits**: Per-endpoint, not a single daily cap; check the `X-RateLimit-Limit`/
+  `X-RateLimit-Remaining` headers. A 429 error reports whichever values are present
 
 ### Performance Tips
 
@@ -282,7 +283,8 @@ Sort: date desc
 
 ## Limitations
 
-- **Rate limit**: 5000 requests/day (request higher limits at https://scixplorer.org/feedback/general)
+- **Rate limit**: Per-endpoint, not a single daily cap; the `X-RateLimit-*` response headers are
+  authoritative (request higher limits at https://scixplorer.org/feedback/general)
 - **Bibcode limits**: Max 2000 bibcodes per request for metrics/export/library operations
 - **Search results**: Max 100 rows per search request
 - **Annotation length**: Max 10000 characters

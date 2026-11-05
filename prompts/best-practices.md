@@ -82,14 +82,16 @@ For bulk queries:
 - Check for typos
 
 **Rate limits:**
-- Default: 5000 requests/day per API key
+- Limits are per-endpoint, not a single account-wide daily cap
+- The `X-RateLimit-Limit` and `X-RateLimit-Remaining` response headers are authoritative; a 429
+  error reports whichever of them the response carries
 - Request higher limits at https://scixplorer.org/feedback/general
-- Monitor rate limit headers in responses
 
 ## Rate Limits
 
-- **Daily limit**: 5000 requests per API token
-- Rate limit info returned in response headers
+- Limits are per-endpoint, not a single daily cap
+- The `X-RateLimit-Limit` and `X-RateLimit-Remaining` response headers are authoritative; a 429
+  error reports them when the response includes them
 - Plan workflows to minimize requests
 - Use batch operations when possible
 
