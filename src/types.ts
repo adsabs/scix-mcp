@@ -117,10 +117,10 @@ export type CitationsInput = z.infer<typeof CitationsInputSchema>;
 export type ExportInput = z.infer<typeof ExportInputSchema>;
 
 export enum LibraryPermission {
-  OWNER = 'owner',
-  ADMIN = 'admin',
+  READ = 'read',
   WRITE = 'write',
-  READ = 'read'
+  ADMIN = 'admin',
+  NONE = 'none'
 }
 
 export enum LibraryType {
@@ -204,7 +204,9 @@ export const GetPermissionsInputSchema = z.object({
 export const UpdatePermissionsInputSchema = z.object({
   library_id: z.string().min(1).describe('Library identifier'),
   email: z.string().email().describe('User email to grant/modify permissions'),
-  permission: z.enum(LibraryPermission).describe('Permission level to grant'),
+  permission: z
+    .enum(LibraryPermission)
+    .describe("Permission level to grant, or 'none' to revoke all access"),
   response_format: z.enum(ResponseFormat).default(ResponseFormat.MARKDOWN)
 });
 
@@ -369,10 +371,7 @@ export interface LibraryOperationResponse {
   number_added?: number;
 }
 
-export interface PermissionsResponse {
-  owner?: string;
-  collaborators?: Record<string, string[]>;
-}
+export type PermissionsResponse = Record<string, string[]>[];
 
 export interface Note {
   id?: string;

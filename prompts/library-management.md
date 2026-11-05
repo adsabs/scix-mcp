@@ -110,7 +110,7 @@ get_permissions(library_id="...")
 update_permissions(
   library_id="...",
   email="colleague@university.edu",
-  permission="read"  # or "write", "admin", "owner"
+  permission="read"  # or "write", "admin", "none" to revoke
 )
 ```
 

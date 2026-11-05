@@ -119,6 +119,24 @@ describe.skipIf(!isAgentHarnessEnabled())('SciX MCP agent evals', () => {
     expect(run.finalText).toContain('Key result for the committee');
   });
 
+  it('revokes a collaborator when asked to remove their access', async () => {
+    mock.reset();
+
+    const run = await runAgent({
+      apiBase: mock.url,
+      prompt:
+        'Using the SciX tools, remove collab@example.com\'s access to library ' +
+        'smokeLibId entirely, then list who still has access.'
+    });
+
+    report('revoke-access', run);
+
+    expect(run.isError).toBe(false);
+    expect(run.failedToolCalls).toEqual([]);
+    expect(run.toolNames).toContain('update_permissions');
+    expect(mock.grantedPermission('smokeLibId', 'collab@example.com')).toBeUndefined();
+  });
+
   it('adds query results to an existing library without creating a new one', async () => {
     mock.reset();
 

@@ -154,7 +154,7 @@ cannot use this endpoint.
 ### Permissions & Sharing
 
 - `get_permissions`: View owners/collaborators for `library_id`; optional `response_format`.
-- `update_permissions`: Grant/change a user's access with `library_id`, `email`, `permission` (`owner` | `admin` | `write` | `read`), and optional `response_format`.
+- `update_permissions`: Grant, change, or revoke a user's access with `library_id`, `email`, `permission` (`read` | `write` | `admin` | `none`), and optional `response_format`. `none` revokes all access; ownership moves via `transfer_library` instead.
 - `transfer_library`: Transfer ownership with `library_id`, `email`, and optional `response_format`.
 
 ### Annotations

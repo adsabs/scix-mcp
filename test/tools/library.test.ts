@@ -17,7 +17,7 @@ import {
   manageAnnotation,
   deleteAnnotation
 } from '../../src/tools/library.js';
-import { ResponseFormat, DocumentAction, LibraryOperation } from '../../src/types.js';
+import { ResponseFormat, DocumentAction, LibraryOperation, LibraryPermission } from '../../src/types.js';
 
 describe('Library Tools', () => {
   let client: SciXAPIClient;
@@ -582,16 +582,14 @@ describe('Library Tools', () => {
   });
 
   describe('getPermissions', () => {
-    it('should fetch permissions', async () => {
-      const mockData = {
-        owner: 'owner@example.com',
-        collaborators: {
-          'user1@example.com': ['read'],
-          'user2@example.com': ['read', 'write']
-        }
-      };
+    const permissionsList = [
+      { 'owner@example.com': ['owner'] },
+      { 'user1@example.com': ['read'] },
+      { 'user2@example.com': ['read', 'write'] }
+    ];
 
-      const mockFetch = setupMockFetch({ body: mockData });
+    it('should fetch permissions', async () => {
+      const mockFetch = setupMockFetch({ body: permissionsList });
 
       const result = await getPermissions(client, {
         library_id: 'lib1',
@@ -601,20 +599,45 @@ describe('Library Tools', () => {
       const [url] = mockFetch.mock.calls[0];
       expect(url).toContain('biblib/permissions/lib1');
 
-      expect(result).toContain('owner@example.com');
+      expect(result).toContain('**Owner**: owner@example.com');
       expect(result).toContain('user1@example.com');
-      expect(result).toContain('read, write');
+      expect(result).toContain('user2@example.com');
+      expect(result).not.toContain('No collaborators.');
+    });
+
+    it('reports the highest grant each collaborator holds', async () => {
+      setupMockFetch({ body: permissionsList });
+
+      const result = await getPermissions(client, {
+        library_id: 'lib1',
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      expect(result).toContain('- **user1@example.com**: read');
+      expect(result).toContain('- **user2@example.com**: write');
+    });
+
+    it('reports no collaborators when only the owner is listed', async () => {
+      setupMockFetch({ body: [{ 'owner@example.com': ['owner'] }] });
+
+      const result = await getPermissions(client, {
+        library_id: 'lib1',
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      expect(result).toContain('**Owner**: owner@example.com');
+      expect(result).toContain('No collaborators.');
     });
   });
 
   describe('updatePermissions', () => {
-    it('should update permissions', async () => {
+    it('sends biblib a boolean flag map with one grant set', async () => {
       const mockFetch = setupMockFetch({ body: {} });
 
       const result = await updatePermissions(client, {
         library_id: 'lib1',
         email: 'user@example.com',
-        permission: 'write',
+        permission: LibraryPermission.WRITE,
         response_format: ResponseFormat.MARKDOWN
       });
 
@@ -624,9 +647,26 @@ describe('Library Tools', () => {
 
       const body = JSON.parse(init.body);
       expect(body.email).toBe('user@example.com');
-      expect(body.permission).toBe('write');
+      expect(body.permission).toEqual({ read: false, write: true, admin: false });
 
       expect(result).toContain('Permissions updated successfully');
+    });
+
+    it('revokes every grant when permission is none', async () => {
+      const mockFetch = setupMockFetch({ body: {} });
+
+      const result = await updatePermissions(client, {
+        library_id: 'lib1',
+        email: 'user@example.com',
+        permission: LibraryPermission.NONE,
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      const [, init] = mockFetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.permission).toEqual({ read: false, write: false, admin: false });
+
+      expect(result).toContain('Access revoked for user@example.com');
     });
   });
 

@@ -227,6 +227,36 @@ describe('MCP protocol smoke suite (stdio against build/index.js)', () => {
     ).toBe(false);
   });
 
+  it('grants and revokes a collaborator through the flag map', async () => {
+    const email = 'newcollab@example.com';
+
+    const granted = (await client.callTool({
+      name: 'update_permissions',
+      arguments: { library_id: 'smokeLibId', email, permission: 'write' }
+    })) as CallToolResult;
+
+    expect(granted.isError ?? false).toBe(false);
+    expect(mock.grantedPermission('smokeLibId', email)).toEqual(['write']);
+
+    const listed = (await client.callTool({
+      name: 'get_permissions',
+      arguments: { library_id: 'smokeLibId' }
+    })) as CallToolResult;
+
+    const text = firstText(listed);
+    expect(text).toContain('**Owner**: owner@example.com');
+    expect(text).toContain(`- **${email}**: write`);
+    expect(text).not.toContain('No collaborators.');
+
+    const revoked = (await client.callTool({
+      name: 'update_permissions',
+      arguments: { library_id: 'smokeLibId', email, permission: 'none' }
+    })) as CallToolResult;
+
+    expect(firstText(revoked)).toContain(`Access revoked for ${email}`);
+    expect(mock.grantedPermission('smokeLibId', email)).toBeUndefined();
+  });
+
   it('reports an absent annotation rather than failing', async () => {
     const read = (await client.callTool({
       name: 'get_annotation',

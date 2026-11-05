@@ -16,6 +16,7 @@ import {
   DeleteAnnotationInput,
   ResponseFormat,
   LibraryOperation,
+  LibraryPermission,
   DocumentAction,
   LibraryMetadata,
   LibraryMetadataResponse,
@@ -342,6 +343,14 @@ export async function libraryOperation(
   return output;
 }
 
+const PERMISSION_RANK = ['read', 'write', 'admin', 'owner'];
+
+function highestPermission(granted: string[]): string | undefined {
+  return [...granted]
+    .filter((entry) => PERMISSION_RANK.includes(entry))
+    .sort((a, b) => PERMISSION_RANK.indexOf(b) - PERMISSION_RANK.indexOf(a))[0];
+}
+
 export async function getPermissions(
   client: SciXAPIClient,
   input: GetPermissionsInput
@@ -352,16 +361,29 @@ export async function getPermissions(
     return JSON.stringify(data, null, 2);
   }
 
-  let output = `# Library Permissions\n\n`;
+  const entries = Array.isArray(data) ? data : [];
+  const grants: { email: string; granted: string[] }[] = [];
 
-  if (data.owner) {
-    output += `**Owner**: ${data.owner}\n\n`;
+  for (const entry of entries) {
+    for (const [email, granted] of Object.entries(entry ?? {})) {
+      grants.push({ email, granted: Array.isArray(granted) ? granted : [] });
+    }
   }
 
-  if (data.collaborators && Object.keys(data.collaborators).length > 0) {
+  const owners = grants.filter((grant) => grant.granted.includes('owner'));
+  const collaborators = grants.filter((grant) => !grant.granted.includes('owner'));
+
+  let output = `# Library Permissions\n\n`;
+
+  for (const owner of owners) {
+    output += `**Owner**: ${owner.email}\n\n`;
+  }
+
+  if (collaborators.length > 0) {
     output += `## Collaborators\n\n`;
-    for (const [email, permissions] of Object.entries(data.collaborators)) {
-      output += `- **${email}**: ${permissions.join(', ')}\n`;
+    for (const { email, granted } of collaborators) {
+      const level = highestPermission(granted) ?? 'none';
+      output += `- **${email}**: ${level}\n`;
     }
   } else {
     output += 'No collaborators.\n';
@@ -376,13 +398,21 @@ export async function updatePermissions(
 ): Promise<string> {
   const payload = {
     email: input.email,
-    permission: input.permission
+    permission: {
+      read: input.permission === LibraryPermission.READ,
+      write: input.permission === LibraryPermission.WRITE,
+      admin: input.permission === LibraryPermission.ADMIN
+    }
   };
 
   const data = await client.post(`biblib/permissions/${libraryIdSegment(input.library_id)}`, payload);
 
   if (input.response_format === ResponseFormat.JSON) {
     return JSON.stringify(data, null, 2);
+  }
+
+  if (input.permission === LibraryPermission.NONE) {
+    return `Access revoked for ${input.email}.`;
   }
 
   return `Permissions updated successfully.\n\n` +

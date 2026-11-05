@@ -243,6 +243,74 @@ function noteStore(libraries: LibraryStore) {
 
 type NoteStore = ReturnType<typeof noteStore>;
 
+const GRANT_FLAGS = ['read', 'write', 'admin'] as const;
+
+function readGrant(body: unknown): string[] | undefined {
+  const value = (body as { permission?: unknown } | null)?.permission;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const flags = value as Record<string, unknown>;
+  for (const key of Object.keys(flags)) {
+    if (!GRANT_FLAGS.includes(key as (typeof GRANT_FLAGS)[number])) {
+      return undefined;
+    }
+  }
+
+  return GRANT_FLAGS.filter((flag) => flags[flag] === true);
+}
+
+function permissionStore() {
+  const byLibrary = new Map<string, Map<string, string[]>>();
+
+  const seed = () => {
+    byLibrary.clear();
+    byLibrary.set(
+      'smokeLibId',
+      new Map([
+        ['owner@example.com', ['owner']],
+        ['collab@example.com', ['read']]
+      ])
+    );
+  };
+
+  seed();
+
+  return {
+    seed,
+    granted: (libraryId: string, email: string) => byLibrary.get(libraryId)?.get(email),
+    list: (libraryId: string) =>
+      [...(byLibrary.get(libraryId) ?? new Map<string, string[]>()).entries()].map(
+        ([email, granted]) => ({ [email]: granted })
+      ),
+    update: (libraryId: string, body: unknown): MockResult => {
+      const email = (body as { email?: unknown } | null)?.email;
+      if (typeof email !== 'string') {
+        return { status: 400, body: { error: 'email is required' } };
+      }
+
+      const granted = readGrant(body);
+      if (!granted) {
+        return { status: 400, body: { error: 'permission must be a boolean flag map' } };
+      }
+
+      const library = byLibrary.get(libraryId) ?? new Map<string, string[]>();
+      byLibrary.set(libraryId, library);
+
+      if (granted.length === 0) {
+        library.delete(email);
+      } else {
+        library.set(email, granted);
+      }
+
+      return { body: {} };
+    }
+  };
+}
+
+type PermissionStore = ReturnType<typeof permissionStore>;
+
 function toMetadata(library: StoredLibrary) {
   return {
     ...LIBRARY_METADATA,
@@ -274,7 +342,11 @@ function resolveSearch({ url }: MockRequestContext): MockResult {
 }
 
 // Ordered most-specific first; first match wins.
-function createRoutes(libraries: LibraryStore, notes: NoteStore): MockRoute[] {
+function createRoutes(
+  libraries: LibraryStore,
+  notes: NoteStore,
+  permissions: PermissionStore
+): MockRoute[] {
   return [
     { method: 'GET', pattern: /^\/search\/query$/, resolve: resolveSearch },
     { method: 'POST', pattern: /^\/metrics$/, body: METRICS_RESPONSE },
@@ -390,12 +462,13 @@ function createRoutes(libraries: LibraryStore, notes: NoteStore): MockRoute[] {
     {
       method: 'GET',
       pattern: /^\/biblib\/permissions\/[^/]+$/,
-      body: {
-        owner: 'owner@example.com',
-        collaborators: { 'collab@example.com': ['read'] }
-      }
+      resolve: ({ url }) => ({ body: permissions.list(libraryIdFrom(url)) })
     },
-    { method: 'POST', pattern: /^\/biblib\/permissions\/[^/]+$/, body: {} },
+    {
+      method: 'POST',
+      pattern: /^\/biblib\/permissions\/[^/]+$/,
+      resolve: ({ url, body }) => permissions.update(libraryIdFrom(url), body)
+    },
     { method: 'POST', pattern: /^\/biblib\/transfer\/[^/]+$/, body: {} }
   ];
 }
@@ -416,6 +489,7 @@ export interface MockAdsServer {
   aborted: RecordedRequest[];
   libraryDocuments: (id: string) => string[] | undefined;
   noteContent: (libraryId: string, bibcode: string) => string | undefined;
+  grantedPermission: (libraryId: string, email: string) => string[] | undefined;
   setDelay: (ms: number) => void;
   reset: () => void;
   close: () => Promise<void>;
@@ -438,7 +512,8 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
   const libraries = libraryStore();
   const notes = noteStore(libraries);
   notes.seed();
-  const routes = createRoutes(libraries, notes);
+  const permissions = permissionStore();
+  const routes = createRoutes(libraries, notes, permissions);
   let delayMs = 0;
   const pending = new Set<ReturnType<typeof setTimeout>>();
 
@@ -530,6 +605,7 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
       return library ? [...library.documents] : undefined;
     },
     noteContent: (libraryId: string, bibcode: string) => notes.content(libraryId, bibcode),
+    grantedPermission: (libraryId: string, email: string) => permissions.granted(libraryId, email),
     setDelay: (ms: number) => {
       delayMs = ms;
     },
@@ -539,6 +615,7 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
       delayMs = 0;
       libraries.seed();
       notes.seed();
+      permissions.seed();
       pending.forEach(clearTimeout);
       pending.clear();
     },

@@ -166,7 +166,8 @@ hundreds of results to work out the shape of a result set.
 
 **update_permissions** - Grant/modify access
 
-- Levels: `owner`, `admin`, `write`, `read`
+- Levels: `read`, `write`, `admin`, or `none` to revoke all access
+- Ownership is not a level here — use `transfer_library`
 - Requires user email
 
 **transfer_library** - Change ownership
