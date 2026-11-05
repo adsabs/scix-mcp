@@ -8,16 +8,18 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/adsabs/scix-mcp",
-  "version": "1.0.15",
+  "version": "1.3.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "scix-mcp",
-      "version": "1.0.15",
+      "version": "1.3.1",
       "transport": {
         "type": "stdio",
         "command": "npx",
-        "args": ["scix-mcp"],
+        "args": [
+          "scix-mcp"
+        ],
         "env": {
           "SCIX_API_TOKEN": "<your_scix_token>"
         }
