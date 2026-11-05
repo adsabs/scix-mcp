@@ -92,7 +92,7 @@ The index contains:
 {
   "id": "usage_guide__chunk0",
   "source_file": "USAGE_GUIDE.md",
-  "source_url": "https://github.com/thostetler/scix-mcp/blob/master/USAGE_GUIDE.md",
+  "source_url": "https://github.com/adsabs/scix-mcp/blob/master/USAGE_GUIDE.md",
   "doc_type": "usage_guide",
   "category": "user_docs",
   "title": "SciX MCP Server - Usage Guide",
