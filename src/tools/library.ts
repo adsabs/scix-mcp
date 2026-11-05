@@ -192,21 +192,32 @@ export async function editLibrary(
 
   // ADS/SciX expects metadata updates on the documents endpoint, not libraries
   const data = await client.put<LibraryMetadataResponse>(`biblib/documents/${libraryIdSegment(input.library_id)}`, payload);
-  const library = data.metadata ?? data;
-
-  if (!library || !library.name) {
-    throw new Error('Unexpected edit_library response: missing library metadata');
-  }
+  const library = data.metadata ?? data ?? {};
 
   if (input.response_format === ResponseFormat.JSON) {
     return JSON.stringify(library, null, 2);
   }
 
-  return `Library updated successfully!\n\n` +
-    `**Name**: ${library.name}\n` +
-    `**Description**: ${library.description || 'No description'}\n` +
-    `**Public**: ${library.public ? 'Yes' : 'No'}\n` +
-    `**Modified**: ${library.date_last_modified}`;
+  const name = library.name ?? input.name;
+  const description = library.description ?? input.description;
+  const isPublic = library.public ?? input.public;
+
+  let output = `Library updated successfully!\n\n`;
+
+  if (name !== undefined) {
+    output += `**Name**: ${name}\n`;
+  }
+  if (description !== undefined) {
+    output += `**Description**: ${description || 'No description'}\n`;
+  }
+  if (isPublic !== undefined) {
+    output += `**Public**: ${isPublic ? 'Yes' : 'No'}\n`;
+  }
+  if (library.date_last_modified) {
+    output += `**Modified**: ${library.date_last_modified}\n`;
+  }
+
+  return output.trimEnd();
 }
 
 export async function manageDocuments(

@@ -462,11 +462,22 @@ function createRoutes(
         }
 
         const fields = (body ?? {}) as Record<string, unknown>;
-        if (typeof fields.name === 'string') library.name = fields.name;
-        if (typeof fields.description === 'string') library.description = fields.description;
-        if (typeof fields.public === 'boolean') library.public = fields.public;
+        const echoed: Record<string, unknown> = {};
 
-        return { body: { metadata: toMetadata(library) } };
+        if (typeof fields.name === 'string') {
+          library.name = fields.name;
+          echoed.name = library.name;
+        }
+        if (typeof fields.description === 'string') {
+          library.description = fields.description;
+          echoed.description = library.description;
+        }
+        if (typeof fields.public === 'boolean') {
+          library.public = fields.public;
+          echoed.public = library.public;
+        }
+
+        return { body: echoed };
       }
     },
     {

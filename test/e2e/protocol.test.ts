@@ -227,6 +227,20 @@ describe('MCP protocol smoke suite (stdio against build/index.js)', () => {
     ).toBe(false);
   });
 
+  it('edits a single field without failing on the partial response', async () => {
+    const result = (await client.callTool({
+      name: 'edit_library',
+      arguments: { library_id: 'smokeLibId', description: 'Description only' }
+    })) as CallToolResult;
+
+    expect(result.isError ?? false).toBe(false);
+
+    const text = firstText(result);
+    expect(text).toContain('Library updated successfully');
+    expect(text).toContain('**Description**: Description only');
+    expect(text).not.toContain('undefined');
+  });
+
   it('reports the library a union operation creates', async () => {
     const result = (await client.callTool({
       name: 'library_operation',

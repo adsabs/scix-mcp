@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SciXAPIClient } from '../../src/client.js';
 import { setupMockFetch, setupMockFetchSequence, restoreFetch } from '../helpers/mockFetch.js';
 import {
@@ -350,6 +350,36 @@ describe('Library Tools', () => {
       expect(body.name).toBe('New Name');
       expect(body.description).toBeUndefined();
       expect(body.public).toBeUndefined();
+    });
+
+    it('succeeds when the response echoes only the submitted fields', async () => {
+      setupMockFetch({ body: { description: 'Just the description' } });
+
+      const result = await editLibrary(client, {
+        library_id: 'lib1',
+        description: 'Just the description',
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      expect(result).toContain('Library updated successfully');
+      expect(result).toContain('**Description**: Just the description');
+      expect(result).not.toContain('undefined');
+      expect(result).not.toContain('**Name**');
+    });
+
+    it('falls back to the submitted values when the response is empty', async () => {
+      setupMockFetch({ body: {} });
+
+      const result = await editLibrary(client, {
+        library_id: 'lib1',
+        name: 'Renamed',
+        public: true,
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      expect(result).toContain('**Name**: Renamed');
+      expect(result).toContain('**Public**: Yes');
+      expect(result).not.toContain('undefined');
     });
   });
 
