@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SciXAPIClient } from '../../src/client.js';
-import { setupMockFetch, restoreFetch } from '../helpers/mockFetch.js';
+import { setupMockFetch, setupMockFetchSequence, restoreFetch } from '../helpers/mockFetch.js';
 import {
   getLibraries,
   getLibrary,
@@ -652,16 +652,21 @@ describe('Library Tools', () => {
   });
 
   describe('getAnnotation', () => {
-    it('should fetch annotation', async () => {
-      const mockData = {
+    const noteEnvelope = {
+      document: '2024ApJ...123..456A',
+      note: {
         id: 'note1',
         bibcode: '2024ApJ...123..456A',
+        library_id: 'lib1',
         content: 'This is my note',
         date_created: '2024-01-01',
         date_last_modified: '2024-01-02'
-      };
+      },
+      library_metadata: { id: 'lib1', name: 'My Library' }
+    };
 
-      const mockFetch = setupMockFetch({ body: mockData });
+    it('should fetch annotation', async () => {
+      const mockFetch = setupMockFetch({ body: noteEnvelope });
 
       const result = await getAnnotation(client, {
         library_id: 'lib1',
@@ -670,7 +675,8 @@ describe('Library Tools', () => {
       });
 
       const [url] = mockFetch.mock.calls[0];
-      expect(url).toContain('biblib/libraries/lib1/notes/2024ApJ...123..456A');
+      expect(url).toContain('biblib/notes/lib1/2024ApJ...123..456A');
+      expect(url).not.toContain('biblib/libraries');
 
       expect(result).toContain('This is my note');
       expect(result).toContain('2024ApJ...123..456A');
@@ -687,11 +693,65 @@ describe('Library Tools', () => {
 
       expect(result).toContain('No annotation found');
     });
+
+    it('treats a 400 from biblib as an absent note', async () => {
+      setupMockFetch({ status: 400, body: { error: 'no note' } });
+
+      const result = await getAnnotation(client, {
+        library_id: 'lib1',
+        bibcode: '2024ApJ...123..456A',
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      expect(result).toContain('No annotation found');
+    });
+
+    it('still surfaces unrelated errors', async () => {
+      setupMockFetch({ status: 500, body: { error: 'boom' } });
+
+      await expect(
+        getAnnotation(client, {
+          library_id: 'lib1',
+          bibcode: '2024ApJ...123..456A',
+          response_format: ResponseFormat.MARKDOWN
+        })
+      ).rejects.toThrow();
+    });
   });
 
   describe('manageAnnotation', () => {
-    it('should save annotation', async () => {
-      const mockFetch = setupMockFetch({ body: {} });
+    it('posts a new note when the document has none', async () => {
+      const mockFetch = setupMockFetchSequence([
+        { status: 400, body: { error: 'no note' } },
+        { body: { document: '2024ApJ...123..456A', note: { content: 'My new note' } } }
+      ]);
+
+      const result = await manageAnnotation(client, {
+        library_id: 'lib1',
+        bibcode: '2024ApJ...123..456A',
+        content: 'My new note',
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      const [probeUrl, probeInit] = mockFetch.mock.calls[0];
+      expect(probeUrl).toContain('biblib/notes/lib1/2024ApJ...123..456A');
+      expect(probeInit.method).toBe('GET');
+
+      const [writeUrl, writeInit] = mockFetch.mock.calls[1];
+      expect(writeUrl).toContain('biblib/notes/lib1/2024ApJ...123..456A');
+      expect(writeInit.method).toBe('POST');
+      expect(JSON.parse(writeInit.body).content).toBe('My new note');
+
+      expect(result).toContain('Annotation created successfully');
+    });
+
+    it('puts an update when the document already has a note', async () => {
+      const mockFetch = setupMockFetchSequence([
+        { body: { document: '2024ApJ...123..456A', note: { content: 'Old note' } } },
+        { body: { document: '2024ApJ...123..456A', note: { content: 'My updated note' } } }
+      ]);
 
       const result = await manageAnnotation(client, {
         library_id: 'lib1',
@@ -700,14 +760,13 @@ describe('Library Tools', () => {
         response_format: ResponseFormat.MARKDOWN
       });
 
-      const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toContain('biblib/libraries/lib1/notes/2024ApJ...123..456A');
-      expect(init.method).toBe('POST');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
 
-      const body = JSON.parse(init.body);
-      expect(body.content).toBe('My updated note');
+      const [, writeInit] = mockFetch.mock.calls[1];
+      expect(writeInit.method).toBe('PUT');
+      expect(JSON.parse(writeInit.body).content).toBe('My updated note');
 
-      expect(result).toContain('Annotation saved successfully');
+      expect(result).toContain('Annotation updated successfully');
     });
   });
 
@@ -722,7 +781,7 @@ describe('Library Tools', () => {
       });
 
       const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toContain('biblib/libraries/lib1/notes/2024ApJ...123..456A');
+      expect(url).toContain('biblib/notes/lib1/2024ApJ...123..456A');
       expect(init.method).toBe('DELETE');
 
       expect(result).toContain('Annotation deleted successfully');

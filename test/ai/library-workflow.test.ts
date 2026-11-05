@@ -97,6 +97,28 @@ describe.skipIf(!isAgentHarnessEnabled())('SciX MCP agent evals', () => {
     expect(run.finalText).toMatch(/\b7\b/);
   });
 
+  it('writes a note and reads back the content it just wrote', async () => {
+    mock.reset();
+
+    const run = await runAgent({
+      apiBase: mock.url,
+      prompt:
+        `Using the SciX tools, attach the note "Key result for the committee" to ` +
+        `paper ${SMOKE_BIBCODE} in library smokeLibId, then read the note back ` +
+        `and tell me exactly what it says.`
+    });
+
+    report('annotation-round-trip', run);
+
+    expect(run.isError).toBe(false);
+    expect(run.failedToolCalls).toEqual([]);
+    expect(run.toolNames).toContain('manage_annotation');
+    expect(mock.noteContent('smokeLibId', SMOKE_BIBCODE)).toBe(
+      'Key result for the committee'
+    );
+    expect(run.finalText).toContain('Key result for the committee');
+  });
+
   it('adds query results to an existing library without creating a new one', async () => {
     mock.reset();
 

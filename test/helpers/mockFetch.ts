@@ -85,6 +85,24 @@ export function setupMockFetch(options: MockFetchOptions = {}) {
   return mockFetch;
 }
 
+export function setupMockFetchSequence(sequence: MockFetchOptions[]) {
+  if (sequence.length === 0) {
+    throw new Error('setupMockFetchSequence needs at least one response');
+  }
+
+  const responders = sequence.map((options) => createMockFetch(options));
+  let call = 0;
+
+  const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    const responder = responders[Math.min(call, responders.length - 1)];
+    call += 1;
+    return responder(url, init);
+  });
+
+  global.fetch = mockFetch as any;
+  return mockFetch;
+}
+
 export function createNetworkErrorFetch() {
   return vi.fn(async () => {
     throw new Error('Network error');

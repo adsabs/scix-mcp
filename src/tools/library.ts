@@ -24,7 +24,7 @@ import {
   DocumentUpdateResponse,
   LibraryOperationResponse,
   PermissionsResponse,
-  Annotation,
+  AnnotationResponse,
   SolrResponse
 } from '../types.js';
 import { libraryIdSegment, bibcodeSegment } from '../api-path.js';
@@ -407,51 +407,83 @@ export async function transferLibrary(
   return `Library transferred successfully to ${input.email}.`;
 }
 
+function notesPath(libraryId: string, bibcode: string): string {
+  return `biblib/notes/${libraryIdSegment(libraryId)}/${bibcodeSegment(bibcode)}`;
+}
+
+const ABSENT_NOTE_STATUSES = [400, 404];
+
+function isAbsentNote(error: unknown): boolean {
+  return error instanceof SciXAPIError && ABSENT_NOTE_STATUSES.includes(error.status);
+}
+
 export async function getAnnotation(
   client: SciXAPIClient,
   input: GetAnnotationInput
 ): Promise<string> {
-  const annotation = await client.get<Annotation>(
-    `biblib/libraries/${libraryIdSegment(input.library_id)}/notes/${bibcodeSegment(input.bibcode)}`
-  );
+  let data: AnnotationResponse;
 
-  if (input.response_format === ResponseFormat.JSON) {
-    return JSON.stringify(annotation, null, 2);
+  try {
+    data = await client.get<AnnotationResponse>(notesPath(input.library_id, input.bibcode));
+  } catch (error: unknown) {
+    if (!isAbsentNote(error)) {
+      throw error;
+    }
+    data = {};
   }
 
-  if (!annotation || !annotation.content) {
+  const note = data.note;
+
+  if (input.response_format === ResponseFormat.JSON) {
+    return JSON.stringify(data, null, 2);
+  }
+
+  if (!note || !note.content) {
     return `No annotation found for ${input.bibcode}.`;
   }
 
   return `# Annotation for ${input.bibcode}\n\n` +
-    `${annotation.content}\n\n` +
+    `${note.content}\n\n` +
     `---\n` +
-    `*Created*: ${annotation.date_created}\n` +
-    `*Modified*: ${annotation.date_last_modified}`;
+    `*Created*: ${note.date_created}\n` +
+    `*Modified*: ${note.date_last_modified}`;
 }
 
 export async function manageAnnotation(
   client: SciXAPIClient,
   input: ManageAnnotationInput
 ): Promise<string> {
-  const payload = {
-    content: input.content
-  };
+  const path = notesPath(input.library_id, input.bibcode);
+  const payload = { content: input.content };
 
-  const data = await client.post(`biblib/libraries/${libraryIdSegment(input.library_id)}/notes/${bibcodeSegment(input.bibcode)}`, payload);
+  let exists = true;
+  try {
+    const existing = await client.get<AnnotationResponse>(path);
+    exists = Boolean(existing?.note);
+  } catch (error: unknown) {
+    if (!isAbsentNote(error)) {
+      throw error;
+    }
+    exists = false;
+  }
+
+  const data = exists
+    ? await client.put<AnnotationResponse>(path, payload)
+    : await client.post<AnnotationResponse>(path, payload);
 
   if (input.response_format === ResponseFormat.JSON) {
     return JSON.stringify(data, null, 2);
   }
 
-  return `Annotation saved successfully for ${input.bibcode}.`;
+  const action = exists ? 'updated' : 'created';
+  return `Annotation ${action} successfully for ${input.bibcode}.`;
 }
 
 export async function deleteAnnotation(
   client: SciXAPIClient,
   input: DeleteAnnotationInput
 ): Promise<string> {
-  await client.delete(`biblib/libraries/${libraryIdSegment(input.library_id)}/notes/${bibcodeSegment(input.bibcode)}`);
+  await client.delete(notesPath(input.library_id, input.bibcode));
 
   if (input.response_format === ResponseFormat.JSON) {
     return JSON.stringify({ success: true, bibcode: input.bibcode }, null, 2);

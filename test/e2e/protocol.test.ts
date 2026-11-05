@@ -80,7 +80,7 @@ const TOOL_CASES: ToolCase[] = [
   { name: 'update_permissions', args: { library_id: 'smokeLibId', email: 'collab@example.com', permission: 'read' }, marker: 'Permissions updated successfully' },
   { name: 'transfer_library', args: { library_id: 'smokeLibId', email: 'newowner@example.com' }, marker: 'transferred successfully' },
   { name: 'get_annotation', args: { library_id: 'smokeLibId', bibcode: '2024SmokeT..42A' }, marker: 'Smoke annotation body' },
-  { name: 'manage_annotation', args: { library_id: 'smokeLibId', bibcode: '2024SmokeT..42A', content: 'a note' }, marker: 'Annotation saved successfully' },
+  { name: 'manage_annotation', args: { library_id: 'smokeLibId', bibcode: '2024SmokeT..42A', content: 'a note' }, marker: 'Annotation updated successfully' },
   { name: 'delete_annotation', args: { library_id: 'smokeLibId', bibcode: '2024SmokeT..42A' }, marker: 'Annotation deleted successfully' },
   { name: 'search_docs', args: { query: 'search syntax' }, marker: 'Documentation Search Results' },
   { name: 'health_check', args: {}, marker: 'Auth probe:** ok' }
@@ -189,6 +189,52 @@ describe('MCP protocol smoke suite (stdio against build/index.js)', () => {
     for (const bibcode of bibcodes) {
       expect(text).toContain(bibcode);
     }
+  });
+
+  it('round-trips an annotation through biblib/notes', async () => {
+    const bibcode = '2024SmokeT..43B';
+
+    const created = (await client.callTool({
+      name: 'manage_annotation',
+      arguments: { library_id: 'smokeLibId', bibcode, content: 'First pass' }
+    })) as CallToolResult;
+
+    expect(created.isError ?? false).toBe(false);
+    expect(firstText(created)).toContain('Annotation created successfully');
+    expect(mock.noteContent('smokeLibId', bibcode)).toBe('First pass');
+
+    const updated = (await client.callTool({
+      name: 'manage_annotation',
+      arguments: { library_id: 'smokeLibId', bibcode, content: 'Second pass' }
+    })) as CallToolResult;
+
+    expect(firstText(updated)).toContain('Annotation updated successfully');
+    expect(mock.noteContent('smokeLibId', bibcode)).toBe('Second pass');
+
+    const read = (await client.callTool({
+      name: 'get_annotation',
+      arguments: { library_id: 'smokeLibId', bibcode }
+    })) as CallToolResult;
+
+    expect(firstText(read)).toContain('Second pass');
+
+    const notesRequests = mock.requests.filter((request) =>
+      request.pathname.startsWith('/biblib/notes/')
+    );
+    expect(notesRequests.length).toBeGreaterThan(0);
+    expect(
+      mock.requests.some((request) => request.pathname.includes('/notes/') && request.pathname.startsWith('/biblib/libraries'))
+    ).toBe(false);
+  });
+
+  it('reports an absent annotation rather than failing', async () => {
+    const read = (await client.callTool({
+      name: 'get_annotation',
+      arguments: { library_id: 'smokeLibId', bibcode: '2024SmokeT..99Z' }
+    })) as CallToolResult;
+
+    expect(read.isError ?? false).toBe(false);
+    expect(firstText(read)).toContain('No annotation found');
   });
 
   it('reports a non-zero document count on the create_library response', async () => {

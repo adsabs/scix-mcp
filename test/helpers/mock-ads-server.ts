@@ -135,6 +135,114 @@ function libraryIdFrom(url: URL): string {
   return segments[segments.length - 1] ?? '';
 }
 
+function notesTargetFrom(url: URL): { libraryId: string; bibcode: string } {
+  const segments = url.pathname.split('/').filter(Boolean);
+  return {
+    libraryId: segments[segments.length - 2] ?? '',
+    bibcode: segments[segments.length - 1] ?? ''
+  };
+}
+
+interface StoredNote {
+  id: string;
+  content: string;
+  bibcode: string;
+  library_id: string;
+  date_created: string;
+  date_last_modified: string;
+}
+
+function readContent(body: unknown): string | undefined {
+  const value = (body as { content?: unknown } | null)?.content;
+  return typeof value === 'string' ? value : undefined;
+}
+
+function noteStore(libraries: LibraryStore) {
+  const notes = new Map<string, StoredNote>();
+  let nextId = 1;
+
+  const key = (libraryId: string, bibcode: string) => `${libraryId}::${bibcode}`;
+
+  const envelope = (note: StoredNote): MockResult => {
+    const library = libraries.get(note.library_id);
+    return {
+      body: {
+        document: note.bibcode,
+        note: { ...note },
+        library_metadata: library ? toMetadata(library) : undefined
+      }
+    };
+  };
+
+  const absent: MockResult = { status: 400, body: { error: 'no note for this document' } };
+
+  return {
+    seed: () => {
+      notes.clear();
+      nextId = 1;
+      notes.set(key('smokeLibId', '2024SmokeT..42A'), {
+        id: 'noteId',
+        content: 'Smoke annotation body',
+        bibcode: '2024SmokeT..42A',
+        library_id: 'smokeLibId',
+        date_created: '2024-01-01T00:00:00Z',
+        date_last_modified: '2024-01-02T00:00:00Z'
+      });
+    },
+    content: (libraryId: string, bibcode: string) => notes.get(key(libraryId, bibcode))?.content,
+    read: (url: URL): MockResult => {
+      const { libraryId, bibcode } = notesTargetFrom(url);
+      const note = notes.get(key(libraryId, bibcode));
+      return note ? envelope(note) : absent;
+    },
+    create: (url: URL, body: unknown): MockResult => {
+      const { libraryId, bibcode } = notesTargetFrom(url);
+      const content = readContent(body);
+      if (content === undefined) {
+        return { status: 400, body: { error: 'content is required' } };
+      }
+      if (notes.has(key(libraryId, bibcode))) {
+        return { status: 409, body: { error: 'note already exists' } };
+      }
+
+      const note: StoredNote = {
+        id: `noteId${nextId++}`,
+        content,
+        bibcode,
+        library_id: libraryId,
+        date_created: '2024-03-01T00:00:00Z',
+        date_last_modified: '2024-03-01T00:00:00Z'
+      };
+      notes.set(key(libraryId, bibcode), note);
+      return envelope(note);
+    },
+    update: (url: URL, body: unknown): MockResult => {
+      const { libraryId, bibcode } = notesTargetFrom(url);
+      const note = notes.get(key(libraryId, bibcode));
+      if (!note) {
+        return absent;
+      }
+      const content = readContent(body);
+      if (content === undefined) {
+        return { status: 400, body: { error: 'content is required' } };
+      }
+
+      note.content = content;
+      note.date_last_modified = '2024-03-02T00:00:00Z';
+      return envelope(note);
+    },
+    remove: (url: URL): MockResult => {
+      const { libraryId, bibcode } = notesTargetFrom(url);
+      if (!notes.delete(key(libraryId, bibcode))) {
+        return absent;
+      }
+      return { body: {} };
+    }
+  };
+}
+
+type NoteStore = ReturnType<typeof noteStore>;
+
 function toMetadata(library: StoredLibrary) {
   return {
     ...LIBRARY_METADATA,
@@ -166,105 +274,127 @@ function resolveSearch({ url }: MockRequestContext): MockResult {
 }
 
 // Ordered most-specific first; first match wins.
-function createRoutes(libraries: LibraryStore): MockRoute[] {
+function createRoutes(libraries: LibraryStore, notes: NoteStore): MockRoute[] {
   return [
-  { method: 'GET', pattern: /^\/search\/query$/, resolve: resolveSearch },
-  { method: 'POST', pattern: /^\/metrics$/, body: METRICS_RESPONSE },
-  { method: 'POST', pattern: /^\/export\/[^/]+$/, body: { export: '@ARTICLE{smoke2024, title="Smoke Test Paper Alpha"}' } },
+    { method: 'GET', pattern: /^\/search\/query$/, resolve: resolveSearch },
+    { method: 'POST', pattern: /^\/metrics$/, body: METRICS_RESPONSE },
+    {
+      method: 'POST',
+      pattern: /^\/export\/[^/]+$/,
+      body: { export: '@ARTICLE{smoke2024, title="Smoke Test Paper Alpha"}' }
+    },
 
-  // biblib — notes routes must precede the single-segment library route.
-  { method: 'GET', pattern: /^\/biblib\/libraries\/[^/]+\/notes\/[^/]+$/, body: {
-    id: 'noteId',
-    bibcode: '2024SmokeT..42A',
-    content: 'Smoke annotation body',
-    date_created: '2024-01-01T00:00:00Z',
-    date_last_modified: '2024-01-02T00:00:00Z'
-  } },
-  { method: 'POST', pattern: /^\/biblib\/libraries\/[^/]+\/notes\/[^/]+$/, body: { id: 'noteId' } },
-  { method: 'DELETE', pattern: /^\/biblib\/libraries\/[^/]+\/notes\/[^/]+$/, body: {} },
+    {
+      method: 'GET',
+      pattern: /^\/biblib\/notes\/[^/]+\/[^/]+$/,
+      resolve: ({ url }) => notes.read(url)
+    },
+    {
+      method: 'POST',
+      pattern: /^\/biblib\/notes\/[^/]+\/[^/]+$/,
+      resolve: ({ url, body }) => notes.create(url, body)
+    },
+    {
+      method: 'PUT',
+      pattern: /^\/biblib\/notes\/[^/]+\/[^/]+$/,
+      resolve: ({ url, body }) => notes.update(url, body)
+    },
+    {
+      method: 'DELETE',
+      pattern: /^\/biblib\/notes\/[^/]+\/[^/]+$/,
+      resolve: ({ url }) => notes.remove(url)
+    },
 
-  { method: 'POST', pattern: /^\/biblib\/libraries\/operations\/[^/]+$/, body: { library_id: 'opResultId', number_added: 5 } },
-  {
-    method: 'GET',
-    pattern: /^\/biblib\/libraries$/,
-    resolve: () => ({ body: { libraries: libraries.list().map(toMetadata) } })
-  },
-  {
-    method: 'POST',
-    pattern: /^\/biblib\/libraries$/,
-    resolve: ({ body }) => {
-      const created = libraries.create(body);
-      return {
-        body: { name: created.name, id: created.id, description: created.description }
-      };
-    }
-  },
-  {
-    method: 'GET',
-    pattern: /^\/biblib\/libraries\/[^/]+$/,
-    resolve: ({ url }) => {
-      const library = libraries.get(libraryIdFrom(url));
-      if (!library) {
-        return { status: 404, body: { error: 'library not found' } };
+    {
+      method: 'POST',
+      pattern: /^\/biblib\/libraries\/operations\/[^/]+$/,
+      body: { library_id: 'opResultId', number_added: 5 }
+    },
+    {
+      method: 'GET',
+      pattern: /^\/biblib\/libraries$/,
+      resolve: () => ({ body: { libraries: libraries.list().map(toMetadata) } })
+    },
+    {
+      method: 'POST',
+      pattern: /^\/biblib\/libraries$/,
+      resolve: ({ body }) => {
+        const created = libraries.create(body);
+        return {
+          body: { name: created.name, id: created.id, description: created.description }
+        };
       }
-      return { body: { metadata: toMetadata(library), documents: [...library.documents] } };
-    }
-  },
-
-  { method: 'POST', pattern: /^\/biblib\/documents\/[^/]+\/query$/, body: { number_added: 3 } },
-  {
-    method: 'POST',
-    pattern: /^\/biblib\/documents\/[^/]+$/,
-    resolve: ({ url, body }) => {
-      const library = libraries.get(libraryIdFrom(url));
-      if (!library) {
-        return { status: 404, body: { error: 'library not found' } };
+    },
+    {
+      method: 'GET',
+      pattern: /^\/biblib\/libraries\/[^/]+$/,
+      resolve: ({ url }) => {
+        const library = libraries.get(libraryIdFrom(url));
+        if (!library) {
+          return { status: 404, body: { error: 'library not found' } };
+        }
+        return { body: { metadata: toMetadata(library), documents: [...library.documents] } };
       }
+    },
 
-      const bibcodes = readBibcodes(body);
-      const action = (body as { action?: unknown } | null)?.action;
+    { method: 'POST', pattern: /^\/biblib\/documents\/[^/]+\/query$/, body: { number_added: 3 } },
+    {
+      method: 'POST',
+      pattern: /^\/biblib\/documents\/[^/]+$/,
+      resolve: ({ url, body }) => {
+        const library = libraries.get(libraryIdFrom(url));
+        if (!library) {
+          return { status: 404, body: { error: 'library not found' } };
+        }
 
-      if (action === 'remove') {
-        const before = library.documents.length;
-        library.documents = library.documents.filter((entry) => !bibcodes.includes(entry));
-        return { body: { number_removed: before - library.documents.length } };
+        const bibcodes = readBibcodes(body);
+        const action = (body as { action?: unknown } | null)?.action;
+
+        if (action === 'remove') {
+          const before = library.documents.length;
+          library.documents = library.documents.filter((entry) => !bibcodes.includes(entry));
+          return { body: { number_removed: before - library.documents.length } };
+        }
+
+        const added = bibcodes.filter((entry) => !library.documents.includes(entry));
+        library.documents.push(...added);
+        return { body: { number_added: added.length } };
       }
+    },
+    {
+      method: 'PUT',
+      pattern: /^\/biblib\/documents\/[^/]+$/,
+      resolve: ({ url, body }) => {
+        const library = libraries.get(libraryIdFrom(url));
+        if (!library) {
+          return { status: 404, body: { error: 'library not found' } };
+        }
 
-      const added = bibcodes.filter((entry) => !library.documents.includes(entry));
-      library.documents.push(...added);
-      return { body: { number_added: added.length } };
-    }
-  },
-  {
-    method: 'PUT',
-    pattern: /^\/biblib\/documents\/[^/]+$/,
-    resolve: ({ url, body }) => {
-      const library = libraries.get(libraryIdFrom(url));
-      if (!library) {
-        return { status: 404, body: { error: 'library not found' } };
+        const fields = (body ?? {}) as Record<string, unknown>;
+        if (typeof fields.name === 'string') library.name = fields.name;
+        if (typeof fields.description === 'string') library.description = fields.description;
+        if (typeof fields.public === 'boolean') library.public = fields.public;
+
+        return { body: { metadata: toMetadata(library) } };
       }
+    },
+    {
+      method: 'DELETE',
+      pattern: /^\/biblib\/documents\/[^/]+$/,
+      resolve: ({ url }) => {
+        libraries.remove(libraryIdFrom(url));
+        return { body: {} };
+      }
+    },
 
-      const fields = (body ?? {}) as Record<string, unknown>;
-      if (typeof fields.name === 'string') library.name = fields.name;
-      if (typeof fields.description === 'string') library.description = fields.description;
-      if (typeof fields.public === 'boolean') library.public = fields.public;
-
-      return { body: { metadata: toMetadata(library) } };
-    }
-  },
-  {
-    method: 'DELETE',
-    pattern: /^\/biblib\/documents\/[^/]+$/,
-    resolve: ({ url }) => {
-      libraries.remove(libraryIdFrom(url));
-      return { body: {} };
-    }
-  },
-
-  { method: 'GET', pattern: /^\/biblib\/permissions\/[^/]+$/, body: {
-    owner: 'owner@example.com',
-    collaborators: { 'collab@example.com': ['read'] }
-  } },
+    {
+      method: 'GET',
+      pattern: /^\/biblib\/permissions\/[^/]+$/,
+      body: {
+        owner: 'owner@example.com',
+        collaborators: { 'collab@example.com': ['read'] }
+      }
+    },
     { method: 'POST', pattern: /^\/biblib\/permissions\/[^/]+$/, body: {} },
     { method: 'POST', pattern: /^\/biblib\/transfer\/[^/]+$/, body: {} }
   ];
@@ -285,6 +415,7 @@ export interface MockAdsServer {
   // cancelled in flight.
   aborted: RecordedRequest[];
   libraryDocuments: (id: string) => string[] | undefined;
+  noteContent: (libraryId: string, bibcode: string) => string | undefined;
   setDelay: (ms: number) => void;
   reset: () => void;
   close: () => Promise<void>;
@@ -305,7 +436,9 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
   const requests: RecordedRequest[] = [];
   const aborted: RecordedRequest[] = [];
   const libraries = libraryStore();
-  const routes = createRoutes(libraries);
+  const notes = noteStore(libraries);
+  notes.seed();
+  const routes = createRoutes(libraries, notes);
   let delayMs = 0;
   const pending = new Set<ReturnType<typeof setTimeout>>();
 
@@ -396,6 +529,7 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
       const library = libraries.get(id);
       return library ? [...library.documents] : undefined;
     },
+    noteContent: (libraryId: string, bibcode: string) => notes.content(libraryId, bibcode),
     setDelay: (ms: number) => {
       delayMs = ms;
     },
@@ -404,6 +538,7 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
       aborted.length = 0;
       delayMs = 0;
       libraries.seed();
+      notes.seed();
       pending.forEach(clearTimeout);
       pending.clear();
     },

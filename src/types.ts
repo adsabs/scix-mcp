@@ -374,10 +374,17 @@ export interface PermissionsResponse {
   collaborators?: Record<string, string[]>;
 }
 
-export interface Annotation {
-  id: string;
-  bibcode: string;
-  content: string;
-  date_created: string;
-  date_last_modified: string;
+export interface Note {
+  id?: string;
+  content?: string;
+  bibcode?: string;
+  library_id?: string;
+  date_created?: string;
+  date_last_modified?: string;
+}
+
+export interface AnnotationResponse {
+  document?: string;
+  note?: Note;
+  library_metadata?: LibraryMetadata;
 }
