@@ -240,6 +240,9 @@ pnpm test:coverage
 # Run the end-to-end protocol smoke suite (builds first, then drives the
 # built server over stdio against a local mock SciX API)
 pnpm test:e2e
+
+# Run the agent evals (costs tokens; needs the `claude` CLI on PATH)
+pnpm test:ai
 ```
 
 The e2e suite (`test/e2e/protocol.test.ts`) spawns `node build/index.js`,
@@ -247,6 +250,34 @@ connects a real MCP client over stdio, and asserts the live tool/prompt/
 resource surface plus one canned call per tool. It points the server at a
 local mock via the `SCIX_API_BASE` environment variable (see below); no real
 network access is required.
+
+### Agent Evals
+
+`pnpm test:ai` runs `test/ai/library-workflow.test.ts`, which asks a real
+lightweight agent (`claude -p --model haiku`) to do a task and then asserts
+which tools it called and what the server stored. This catches the class of
+bug unit tests cannot see: a tool that returns a cheerful success message
+while doing nothing useful, a misleading tool description that sends the
+agent down a two-step path, or a mutating tool fired for a read-only
+question.
+
+Harness properties:
+
+- **Opt-in.** The suite skips unless `SCIX_AI_EVALS=1`, which the `test:ai`
+  script sets. `pnpm test` and CI stay deterministic and free.
+- **Hermetic.** Each run gets the same local mock SciX API the e2e suite
+  uses, so evals never touch a real account. The harness passes
+  `--strict-mcp-config`; without it the developer's own MCP servers attach,
+  including any `scix` server pointed at production, and a "create a
+  library" prompt could mutate real data.
+- **Non-deterministic.** Assertions target tool names, request payloads, and
+  stored state — not prose. The config retries once, and each test prints
+  the tool sequence and cost so a failure shows the path the agent took.
+- **Cheap.** The four scenarios run in about 40 seconds for roughly $0.11
+  total.
+
+Add a scenario by calling `runAgent({ prompt, apiBase: mock.url })` and
+asserting on the returned `toolNames`, `toolCalls`, and `mock` state.
 
 ### Test Structure
 

@@ -122,8 +122,10 @@ export async function createLibrary(
     public: input.public
   };
 
-  if (input.bibcodes && input.bibcodes.length > 0) {
-    payload.bibcodes = input.bibcodes;
+  const requested = input.bibcodes ?? [];
+
+  if (requested.length > 0) {
+    payload.bibcode = requested;
   }
 
   const data = await client.post<LibraryMetadataResponse>('biblib/libraries', payload);
@@ -140,13 +142,17 @@ export async function createLibrary(
   const link = library.id
     ? `**Link**: ${libraryUrl(library.id, Boolean(input.public))}\n`
     : '';
+  const documents = library.num_documents ?? requested.length;
+  const created = library.date_created
+    ? `\n**Created**: ${library.date_created}`
+    : '';
 
   return `Library created successfully!\n\n` +
     `**Name**: ${library.name}\n` +
     `**ID**: ${library.id}\n` +
     link +
-    `**Documents**: ${library.num_documents}\n` +
-    `**Created**: ${library.date_created}`;
+    `**Documents**: ${documents}` +
+    created;
 }
 
 export async function deleteLibrary(

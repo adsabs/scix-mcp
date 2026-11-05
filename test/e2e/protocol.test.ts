@@ -70,9 +70,9 @@ const TOOL_CASES: ToolCase[] = [
   { name: 'export', args: { bibcodes: ['2024SmokeT..42A'], format: 'bibtex' }, marker: '@ARTICLE{smoke2024' },
   { name: 'get_libraries', args: {}, marker: 'Smoke Library' },
   { name: 'get_library', args: { library_id: 'smokeLibId' }, marker: 'Smoke Library Detail' },
-  { name: 'create_library', args: { name: 'My Library' }, marker: 'Created Smoke Library' },
-  { name: 'delete_library', args: { library_id: 'smokeLibId' }, marker: 'deleted successfully' },
-  { name: 'edit_library', args: { library_id: 'smokeLibId', name: 'Renamed' }, marker: 'Edited Smoke Library' },
+  { name: 'create_library', args: { name: 'My Library' }, marker: 'My Library' },
+  { name: 'delete_library', args: { library_id: 'deletableLibId' }, marker: 'deleted successfully' },
+  { name: 'edit_library', args: { library_id: 'smokeLibId', name: 'Renamed' }, marker: '**Name**: Renamed' },
   { name: 'manage_documents', args: { library_id: 'smokeLibId', bibcodes: ['2024SmokeT..42A'], action: 'add' }, marker: 'added to library successfully' },
   { name: 'add_documents_by_query', args: { library_id: 'smokeLibId', query: 'star' }, marker: 'Documents added to library from query' },
   { name: 'library_operation', args: { library_id: 'smokeLibId', operation: 'union', source_library_ids: ['otherLibId'] }, marker: 'completed successfully' },
@@ -165,5 +165,40 @@ describe('MCP protocol smoke suite (stdio against build/index.js)', () => {
   it('covers every registered tool with a call case', async () => {
     const covered = TOOL_CASES.map((c) => c.name).sort();
     expect(covered).toEqual(EXPECTED_TOOLS);
+  });
+
+  it('stores the papers passed to create_library in one step', async () => {
+    const bibcodes = ['2024SmokeT..42A', '2024SmokeT..43B'];
+
+    const created = (await client.callTool({
+      name: 'create_library',
+      arguments: { name: 'One Step Library', bibcodes, response_format: 'json' }
+    })) as CallToolResult;
+
+    expect(created.isError ?? false).toBe(false);
+    const { id } = JSON.parse(firstText(created)) as { id: string };
+    expect(mock.libraryDocuments(id)).toEqual(bibcodes);
+
+    const read = (await client.callTool({
+      name: 'get_library',
+      arguments: { library_id: id }
+    })) as CallToolResult;
+
+    const text = firstText(read);
+    expect(text).toContain('## Documents (2)');
+    for (const bibcode of bibcodes) {
+      expect(text).toContain(bibcode);
+    }
+  });
+
+  it('reports a non-zero document count on the create_library response', async () => {
+    const created = (await client.callTool({
+      name: 'create_library',
+      arguments: { name: 'Counted Library', bibcodes: ['2024SmokeT..42A'] }
+    })) as CallToolResult;
+
+    const text = firstText(created);
+    expect(text).toContain('**Documents**: 1');
+    expect(text).not.toContain('undefined');
   });
 });

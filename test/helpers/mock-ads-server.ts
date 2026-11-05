@@ -1,12 +1,22 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+interface MockRequestContext {
+  url: URL;
+  body: unknown;
+}
+
+interface MockResult {
+  status?: number;
+  body?: unknown;
+}
+
 interface MockRoute {
   method: string;
   pattern: RegExp;
   status?: number;
   body?: unknown;
-  resolve?: (url: URL) => unknown;
+  resolve?: (context: MockRequestContext) => MockResult;
 }
 
 const SOLR_RESPONSE = {
@@ -57,10 +67,89 @@ const LIBRARY_METADATA = {
   num_users: 1
 };
 
-function resolveSearch(url: URL): unknown {
+interface StoredLibrary {
+  id: string;
+  name: string;
+  description: string;
+  public: boolean;
+  documents: string[];
+}
+
+function readBibcodes(body: unknown): string[] {
+  const value = (body as { bibcode?: unknown } | null)?.bibcode;
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((entry): entry is string => typeof entry === 'string');
+}
+
+function libraryStore() {
+  const libraries = new Map<string, StoredLibrary>();
+  let nextId = 1;
+
+  const seed = () => {
+    libraries.clear();
+    nextId = 1;
+    libraries.set('smokeLibId', {
+      id: 'smokeLibId',
+      name: 'Smoke Library Detail',
+      description: 'A canned library for smoke tests',
+      public: false,
+      documents: ['2024SmokeT..42A', '2024SmokeT..43B']
+    });
+    libraries.set('deletableLibId', {
+      id: 'deletableLibId',
+      name: 'Deletable Smoke Library',
+      description: 'Target for the delete_library smoke case',
+      public: false,
+      documents: []
+    });
+  };
+
+  seed();
+
+  return {
+    seed,
+    get: (id: string) => libraries.get(id),
+    list: () => [...libraries.values()],
+    create: (body: unknown): StoredLibrary => {
+      const fields = (body ?? {}) as Record<string, unknown>;
+      const library: StoredLibrary = {
+        id: `createdLibId${nextId++}`,
+        name: typeof fields.name === 'string' ? fields.name : 'Untitled',
+        description: typeof fields.description === 'string' ? fields.description : '',
+        public: fields.public === true,
+        documents: readBibcodes(body)
+      };
+      libraries.set(library.id, library);
+      return library;
+    },
+    remove: (id: string) => libraries.delete(id)
+  };
+}
+
+type LibraryStore = ReturnType<typeof libraryStore>;
+
+function libraryIdFrom(url: URL): string {
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments[segments.length - 1] ?? '';
+}
+
+function toMetadata(library: StoredLibrary) {
+  return {
+    ...LIBRARY_METADATA,
+    id: library.id,
+    name: library.name,
+    description: library.description,
+    public: library.public,
+    num_documents: library.documents.length
+  };
+}
+
+function resolveSearch({ url }: MockRequestContext): MockResult {
   const requested = url.searchParams.get('json.facet');
   if (!requested) {
-    return SOLR_RESPONSE;
+    return { body: SOLR_RESPONSE };
   }
 
   const fields = Object.keys(JSON.parse(requested) as Record<string, unknown>);
@@ -73,11 +162,12 @@ function resolveSearch(url: URL): unknown {
     };
   }
 
-  return { response: { numFound: 1, docs: [] }, facets };
+  return { body: { response: { numFound: 1, docs: [] }, facets } };
 }
 
 // Ordered most-specific first; first match wins.
-const ROUTES: MockRoute[] = [
+function createRoutes(libraries: LibraryStore): MockRoute[] {
+  return [
   { method: 'GET', pattern: /^\/search\/query$/, resolve: resolveSearch },
   { method: 'POST', pattern: /^\/metrics$/, body: METRICS_RESPONSE },
   { method: 'POST', pattern: /^\/export\/[^/]+$/, body: { export: '@ARTICLE{smoke2024, title="Smoke Test Paper Alpha"}' } },
@@ -94,35 +184,98 @@ const ROUTES: MockRoute[] = [
   { method: 'DELETE', pattern: /^\/biblib\/libraries\/[^/]+\/notes\/[^/]+$/, body: {} },
 
   { method: 'POST', pattern: /^\/biblib\/libraries\/operations\/[^/]+$/, body: { library_id: 'opResultId', number_added: 5 } },
-  { method: 'GET', pattern: /^\/biblib\/libraries$/, body: { libraries: [LIBRARY_METADATA] } },
-  { method: 'POST', pattern: /^\/biblib\/libraries$/, body: {
-    metadata: { ...LIBRARY_METADATA, name: 'Created Smoke Library', id: 'createdLibId', num_documents: 0 }
-  } },
-  { method: 'GET', pattern: /^\/biblib\/libraries\/[^/]+$/, body: {
-    metadata: { ...LIBRARY_METADATA, name: 'Smoke Library Detail' },
-    documents: ['2024SmokeT..42A', '2024SmokeT..43B']
-  } },
+  {
+    method: 'GET',
+    pattern: /^\/biblib\/libraries$/,
+    resolve: () => ({ body: { libraries: libraries.list().map(toMetadata) } })
+  },
+  {
+    method: 'POST',
+    pattern: /^\/biblib\/libraries$/,
+    resolve: ({ body }) => {
+      const created = libraries.create(body);
+      return {
+        body: { name: created.name, id: created.id, description: created.description }
+      };
+    }
+  },
+  {
+    method: 'GET',
+    pattern: /^\/biblib\/libraries\/[^/]+$/,
+    resolve: ({ url }) => {
+      const library = libraries.get(libraryIdFrom(url));
+      if (!library) {
+        return { status: 404, body: { error: 'library not found' } };
+      }
+      return { body: { metadata: toMetadata(library), documents: [...library.documents] } };
+    }
+  },
 
   { method: 'POST', pattern: /^\/biblib\/documents\/[^/]+\/query$/, body: { number_added: 3 } },
-  { method: 'POST', pattern: /^\/biblib\/documents\/[^/]+$/, body: { number_added: 2 } },
-  { method: 'PUT', pattern: /^\/biblib\/documents\/[^/]+$/, body: {
-    metadata: { ...LIBRARY_METADATA, name: 'Edited Smoke Library' }
-  } },
-  { method: 'DELETE', pattern: /^\/biblib\/documents\/[^/]+$/, body: {} },
+  {
+    method: 'POST',
+    pattern: /^\/biblib\/documents\/[^/]+$/,
+    resolve: ({ url, body }) => {
+      const library = libraries.get(libraryIdFrom(url));
+      if (!library) {
+        return { status: 404, body: { error: 'library not found' } };
+      }
+
+      const bibcodes = readBibcodes(body);
+      const action = (body as { action?: unknown } | null)?.action;
+
+      if (action === 'remove') {
+        const before = library.documents.length;
+        library.documents = library.documents.filter((entry) => !bibcodes.includes(entry));
+        return { body: { number_removed: before - library.documents.length } };
+      }
+
+      const added = bibcodes.filter((entry) => !library.documents.includes(entry));
+      library.documents.push(...added);
+      return { body: { number_added: added.length } };
+    }
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/biblib\/documents\/[^/]+$/,
+    resolve: ({ url, body }) => {
+      const library = libraries.get(libraryIdFrom(url));
+      if (!library) {
+        return { status: 404, body: { error: 'library not found' } };
+      }
+
+      const fields = (body ?? {}) as Record<string, unknown>;
+      if (typeof fields.name === 'string') library.name = fields.name;
+      if (typeof fields.description === 'string') library.description = fields.description;
+      if (typeof fields.public === 'boolean') library.public = fields.public;
+
+      return { body: { metadata: toMetadata(library) } };
+    }
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/biblib\/documents\/[^/]+$/,
+    resolve: ({ url }) => {
+      libraries.remove(libraryIdFrom(url));
+      return { body: {} };
+    }
+  },
 
   { method: 'GET', pattern: /^\/biblib\/permissions\/[^/]+$/, body: {
     owner: 'owner@example.com',
     collaborators: { 'collab@example.com': ['read'] }
   } },
-  { method: 'POST', pattern: /^\/biblib\/permissions\/[^/]+$/, body: {} },
-  { method: 'POST', pattern: /^\/biblib\/transfer\/[^/]+$/, body: {} }
-];
+    { method: 'POST', pattern: /^\/biblib\/permissions\/[^/]+$/, body: {} },
+    { method: 'POST', pattern: /^\/biblib\/transfer\/[^/]+$/, body: {} }
+  ];
+}
 
 export interface RecordedRequest {
   method: string;
   pathname: string;
   query?: string;
   headers: Record<string, string | undefined>;
+  body?: unknown;
 }
 
 export interface MockAdsServer {
@@ -131,24 +284,36 @@ export interface MockAdsServer {
   // Requests whose socket closed before the mock answered — i.e. the client
   // cancelled in flight.
   aborted: RecordedRequest[];
+  libraryDocuments: (id: string) => string[] | undefined;
   setDelay: (ms: number) => void;
   reset: () => void;
   close: () => Promise<void>;
 }
 
+function parseBody(raw: string): unknown {
+  if (raw.length === 0) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export async function startMockAdsServer(): Promise<MockAdsServer> {
   const requests: RecordedRequest[] = [];
   const aborted: RecordedRequest[] = [];
+  const libraries = libraryStore();
+  const routes = createRoutes(libraries);
   let delayMs = 0;
   const pending = new Set<ReturnType<typeof setTimeout>>();
 
   const server: Server = createServer((req, res) => {
-    req.resume(); // drain the body so keep-alive sockets close cleanly
-
     const method = req.method ?? 'GET';
     const url = new URL(req.url ?? '/', 'http://localhost');
     const pathname = url.pathname;
-    const route = ROUTES.find((r) => r.method === method && r.pattern.test(pathname));
+    const route = routes.find((r) => r.method === method && r.pattern.test(pathname));
 
     const recorded: RecordedRequest = {
       method,
@@ -170,31 +335,40 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
       }
     });
 
-    if (!route) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: `no mock route for ${method} ${pathname}` }));
-      return;
-    }
-
     const respond = () => {
       if (res.writableEnded || res.destroyed) {
         return;
       }
-      const body = route.resolve ? route.resolve(url) : route.body;
-      res.writeHead(route.status ?? 200, { 'Content-Type': 'application/json' });
-      res.end(body === undefined ? '' : JSON.stringify(body));
+
+      if (!route) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `no mock route for ${method} ${pathname}` }));
+        return;
+      }
+
+      const result: MockResult = route.resolve
+        ? route.resolve({ url, body: recorded.body })
+        : { status: route.status, body: route.body };
+      res.writeHead(result.status ?? route.status ?? 200, { 'Content-Type': 'application/json' });
+      res.end(result.body === undefined ? '' : JSON.stringify(result.body));
     };
 
-    if (delayMs > 0) {
-      const timer = setTimeout(() => {
-        pending.delete(timer);
-        respond();
-      }, delayMs);
-      pending.add(timer);
-      return;
-    }
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      recorded.body = parseBody(Buffer.concat(chunks).toString('utf8'));
 
-    respond();
+      if (delayMs > 0) {
+        const timer = setTimeout(() => {
+          pending.delete(timer);
+          respond();
+        }, delayMs);
+        pending.add(timer);
+        return;
+      }
+
+      respond();
+    });
   });
 
   // A bind failure (EADDRINUSE, EPERM) must reject fast, not hang until the
@@ -218,6 +392,10 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
     url: `http://127.0.0.1:${port}`,
     requests,
     aborted,
+    libraryDocuments: (id: string) => {
+      const library = libraries.get(id);
+      return library ? [...library.documents] : undefined;
+    },
     setDelay: (ms: number) => {
       delayMs = ms;
     },
@@ -225,6 +403,7 @@ export async function startMockAdsServer(): Promise<MockAdsServer> {
       requests.length = 0;
       aborted.length = 0;
       delayMs = 0;
+      libraries.seed();
       pending.forEach(clearTimeout);
       pending.clear();
     },

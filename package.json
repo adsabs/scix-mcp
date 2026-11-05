@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "pnpm build && vitest run --config vitest.e2e.config.ts",
+    "test:ai": "pnpm build && SCIX_AI_EVALS=1 vitest run --config vitest.ai.config.ts",
     "test:coverage": "vitest run --coverage"
   },
   "keywords": [

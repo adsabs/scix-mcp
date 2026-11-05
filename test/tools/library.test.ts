@@ -203,7 +203,8 @@ describe('Library Tools', () => {
       expect(body.name).toBe('New Library');
       expect(body.description).toBe('Description');
       expect(body.public).toBe(true);
-      expect(body.bibcodes).toEqual(['bibcode1', 'bibcode2']);
+      expect(body.bibcode).toEqual(['bibcode1', 'bibcode2']);
+      expect(body.bibcodes).toBeUndefined();
 
       expect(result).toContain('Library created successfully');
       expect(result).toContain('newlib');
@@ -224,7 +225,23 @@ describe('Library Tools', () => {
 
       const [, init] = mockFetch.mock.calls[0];
       const body = JSON.parse(init.body);
-      expect(body.bibcodes).toBeUndefined();
+      expect(body.bibcode).toBeUndefined();
+    });
+
+    it('reports the submitted document count when the response omits it', async () => {
+      setupMockFetch({
+        body: { name: 'New Library', id: 'newlib', description: 'Description' }
+      });
+
+      const result = await createLibrary(client, {
+        name: 'New Library',
+        public: false,
+        bibcodes: ['bibcode1', 'bibcode2'],
+        response_format: ResponseFormat.MARKDOWN
+      });
+
+      expect(result).toContain('**Documents**: 2');
+      expect(result).not.toContain('undefined');
     });
 
     it('should handle create responses without metadata wrapper', async () => {
